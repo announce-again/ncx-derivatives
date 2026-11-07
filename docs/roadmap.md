@@ -2005,8 +2005,6 @@ This stage owns quote-selection policy for smile research.
 - Deterministic records, pandas DataFrames, CSV bytes, and SHA-256 exports
 - Medium integration and separately marked 50,000-row end-to-end validation
 
-Stage 3.3 surface work has not begun.
-
 ---
 
 ## Stage 3.3 — Non-Parametric Volatility Surface
@@ -2036,7 +2034,7 @@ parametric models.
 
 ### Status
 
-**Planned**
+**Complete**. See [interpolation, sparse-grid policy, and validation](volatility_surface.md).
 
 ---
 
@@ -2061,7 +2059,7 @@ violations.
 
 ### Status
 
-**Planned**
+**Complete**. See [calendar and sampled strike diagnostics](volatility_surface.md#static-arbitrage-diagnostics).
 
 ---
 

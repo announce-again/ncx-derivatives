@@ -23,9 +23,10 @@ frozen OptionsDX/Kaggle wide files
   -> summaries, regressions, plots, report, hashes
 ```
 
-Stage 3.3 constant-maturity interpolation is intentionally not represented as
-complete. Nearest-expiry output remains the baseline until that production
-stage exists.
+The [fixed-tenor follow-up](constant_maturity_followup.md) applies Stage 3.3
+total-variance interpolation to the frozen Research 001A expiry panels. It
+compares fixed-expiry, nearest-tenor, and constant-maturity changes on matching
+SPY sessions under both historical carry specifications.
 
 The canonical English Research 001A report is available at
 `outputs/spy_2010_2023_carry_comparison/research_001A_full_report_en.md`.

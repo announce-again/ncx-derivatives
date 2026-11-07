@@ -26,11 +26,16 @@ from ncx_derivatives.volatility import (
     SmileMetricConfig,
     SmileMetricFailureReason,
     SmileMetricStatus,
+    SurfaceFailureReason,
+    SurfaceViolationKind,
     SyntheticOptionDatasetConfig,
+    VolatilitySurface,
     build_implied_volatility_chain,
     build_volatility_smiles,
     calculate_smile_metrics,
     calculate_smile_metrics_for_smiles,
+    diagnose_surface_arbitrage,
+    interpolate_total_variance,
     run_csv_volatility_pipeline,
     smile_metrics_to_dataframe,
     smile_metrics_to_records,
@@ -110,6 +115,90 @@ def _smile_from_total_variance(
     )
     assert selection.summary.selected_point_count == len(coordinates)
     return selection.smiles[0]
+
+
+def test_maturity_interpolation_retains_exact_nodes_and_rejects_extrapolation():
+    nodes = ((0.5, 0.03), (0.1, 0.01))
+    exact = interpolate_total_variance(nodes, 0.1)
+    assert exact.total_variance == 0.01
+    assert exact.lower_maturity == exact.upper_maturity == 0.1
+    middle = interpolate_total_variance(nodes, 0.2)
+    assert middle.total_variance == pytest.approx(0.015)
+    assert middle.upper_weight == pytest.approx(0.25)
+    assert interpolate_total_variance(nodes, 0.05).failure_reason is SurfaceFailureReason.NO_LOWER_MATURITY
+    assert interpolate_total_variance(nodes, 1.0).failure_reason is SurfaceFailureReason.NO_UPPER_MATURITY
+    assert interpolate_total_variance((), 0.2).failure_reason is SurfaceFailureReason.NO_MATURITY_NODES
+    with pytest.raises(ValueError, match="duplicate"):
+        interpolate_total_variance(((0.1, 0.01), (0.1, 0.02)), 0.1)
+
+
+def test_surface_queries_a_ragged_grid_and_reports_holdout_residuals():
+    front = _smile_from_total_variance((-0.10, 0.0, 0.10), lambda k: 0.04 + 0.04 * k * k)
+    back = _smile_from_total_variance((0.0, 0.15), lambda k: 0.09 + 0.03 * k, expiration_days=730)
+    surface = VolatilitySurface((back, front))
+
+    query = surface.query(0.05, 1.5)
+    assert query.total_variance == pytest.approx((0.0402 + 0.0915) / 2, abs=1e-8)
+    assert query.implied_volatility == pytest.approx(sqrt(query.total_variance / 1.5))
+    assert (query.lower_maturity, query.upper_maturity, query.upper_weight) == (1.0, 2.0, 0.5)
+    assert surface.query(-0.05, 1.0).implied_volatility is not None
+    assert surface.query(-0.05, 1.5).failure_reason is SurfaceFailureReason.OUTSIDE_STRIKE_SUPPORT
+    assert all(row.total_variance_residual == 0 for row in surface.residuals())
+    held_out = surface.residuals(leave_one_out=True)
+    assert [row.total_variance_residual for row in held_out if row.fitted_total_variance is not None] == pytest.approx([0.0004], abs=1e-8)
+    with pytest.raises(ValueError, match="duplicate"):
+        VolatilitySurface((front, front))
+
+
+def test_surface_does_not_skip_a_sparse_intermediate_expiry():
+    front = _smile_from_total_variance((-0.1, 0.1), lambda _: 0.04)
+    middle = _smile_from_total_variance((0.05,), lambda _: 0.06, expiration_days=730)
+    back = _smile_from_total_variance((-0.1, 0.1), lambda _: 0.08, expiration_days=1095)
+    surface = VolatilitySurface((front, middle, back))
+
+    assert surface.query(0.0, 1.5).failure_reason is SurfaceFailureReason.OUTSIDE_STRIKE_SUPPORT
+    assert surface.query(middle.points[0].log_forward_moneyness, 2.0).total_variance == pytest.approx(0.06)
+
+
+def test_surface_diagnostics_cover_calendar_and_interpolation_induced_butterflies():
+    front = _smile_from_total_variance((-0.25, 0.0, 0.25), lambda _: 0.04)
+    later = _smile_from_total_variance((-0.25, 0.0, 0.25), lambda _: 0.06, expiration_days=730)
+    clean = diagnose_surface_arbitrage(VolatilitySurface((front, later)))
+    assert not clean.violations
+    assert clean.calendar_comparison_count == 3
+    assert [item.maturity for item in clean.strike_coverage] == [1.0, 1.5, 2.0]
+    assert all(item.minimum_normalized_density_estimate > 0 for item in clean.strike_coverage)
+
+    convexity_input = _smile_from_total_variance((-0.25, 0.0, 0.25), lambda k: 0.008 if k <= 0 else 0.08)
+    report = diagnose_surface_arbitrage(VolatilitySurface((convexity_input, later)))
+    butterfly = next(item for item in report.violations if item.kind is SurfaceViolationKind.BUTTERFLY)
+    assert butterfly.uses_interpolation
+    assert butterfly.normalized_density_estimate < 0
+    calendar = next(item for item in report.violations if item.kind is SurfaceViolationKind.CALENDAR_TOTAL_VARIANCE)
+    assert calendar.magnitude == pytest.approx(0.02, abs=1e-8)
+    assert calendar.later_maturity == 2.0
+    assert not calendar.uses_interpolation
+
+
+def test_surface_diagnostics_report_disjoint_strike_domains():
+    front = _smile_from_total_variance((-0.25, -0.1), lambda _: 0.04)
+    back = _smile_from_total_variance((0.1, 0.25), lambda _: 0.08, expiration_days=730)
+    diagnostics = diagnose_surface_arbitrage(VolatilitySurface((front, back)))
+    assert diagnostics.calendar_comparison_count == 0
+    assert diagnostics.calendar_pairs_without_overlap == ((1.0, 2.0),)
+    assert diagnostics.strike_coverage[1].sample_count == 0
+
+
+def test_surface_diagnostics_compare_nonadjacent_expiries_across_a_strike_gap():
+    front = _smile_from_total_variance((-0.25, -0.1), lambda _: 0.08)
+    middle = _smile_from_total_variance((0.1, 0.25), lambda _: 0.06, expiration_days=730)
+    back = _smile_from_total_variance((-0.25, -0.1), lambda _: 0.04, expiration_days=1095)
+    diagnostics = diagnose_surface_arbitrage(VolatilitySurface((front, middle, back)))
+
+    calendar = [item for item in diagnostics.violations if item.kind is SurfaceViolationKind.CALENDAR_TOTAL_VARIANCE]
+    assert diagnostics.calendar_pairs_without_overlap == ((1.0, 2.0), (2.0, 3.0))
+    assert len(calendar) == 2
+    assert all(item.maturity == 1.0 and item.later_maturity == 3.0 for item in calendar)
 
 
 def test_observed_atm_is_used_directly() -> None:

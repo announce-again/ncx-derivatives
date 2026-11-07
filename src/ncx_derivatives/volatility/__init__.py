@@ -112,6 +112,21 @@ from .smiles import (
     volatility_smiles_to_dataframe,
     volatility_smiles_to_records,
 )
+from .surface import (
+    SurfaceFailureReason,
+    SurfaceQueryResult,
+    SurfaceResidual,
+    VarianceInterpolation,
+    VolatilitySurface,
+    interpolate_total_variance,
+)
+from .surface_arbitrage import (
+    StrikeDiagnosticCoverage,
+    SurfaceArbitrageDiagnostics,
+    SurfaceViolation,
+    SurfaceViolationKind,
+    diagnose_surface_arbitrage,
+)
 from .synthetic_data import (
     SYNTHETIC_OPTION_QUOTE_COLUMNS,
     SyntheticOptionDatasetConfig,
@@ -191,6 +206,13 @@ __all__ = [
     "SmileSelectionReason",
     "SmileSelectionResult",
     "SmileSelectionSummary",
+    "StrikeDiagnosticCoverage",
+    "SurfaceArbitrageDiagnostics",
+    "SurfaceFailureReason",
+    "SurfaceQueryResult",
+    "SurfaceResidual",
+    "SurfaceViolation",
+    "SurfaceViolationKind",
     "SyntheticOptionDatasetConfig",
     "SyntheticOptionDatasetSummary",
     "RiskReversalResult",
@@ -201,8 +223,10 @@ __all__ = [
     "VolatilityPipelineTimings",
     "VolatilitySmile",
     "VolatilitySmilePoint",
+    "VolatilitySurface",
     "VolatilityTermStructure",
     "VolatilityTermStructurePoint",
+    "VarianceInterpolation",
     "analyze_volatility_smiles",
     "build_implied_volatility_chain",
     "build_volatility_smiles",
@@ -220,6 +244,7 @@ __all__ = [
     "delta_structure_results_to_records",
     "delta_volatility_results_to_dataframe",
     "delta_volatility_results_to_records",
+    "diagnose_surface_arbitrage",
     "implied_volatility_chain_summary",
     "implied_volatility_chain_to_dataframe",
     "implied_volatility_chain_to_records",
@@ -246,4 +271,5 @@ __all__ = [
     "volatility_term_structures_to_dataframe",
     "volatility_term_structures_to_records",
     "interpolate_smile_at_delta",
+    "interpolate_total_variance",
 ]

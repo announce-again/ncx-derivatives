@@ -30,3 +30,4 @@ Thumbs.db
 .idea/
 
 data/interim/**/*.duckdb
+data/interim/research_001/*/stage2_inputs/*/stage2_input_*.csv

@@ -10,6 +10,10 @@ from ncx_derivatives.pricing import (
 from ncx_derivatives.pricing.binomial_tree import _payoff
 
 
+def test_crr_handles_indistinguishable_up_and_down_factors():
+    assert binomial_call_price(100, 90, 1, 0, 1e-16, steps=100) == 10
+
+
 @pytest.mark.parametrize(
     ("spot", "strike", "maturity", "rate", "volatility", "dividend_yield"),
     [

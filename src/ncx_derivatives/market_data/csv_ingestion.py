@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import csv
+from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone, tzinfo
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping, TextIO
+from typing import TextIO
 
 from .models import (
     ExerciseStyle,
@@ -28,6 +30,7 @@ from .normalisation import (
 
 class BuiltinCsvIngestionCode(str, Enum):
     EMPTY_CSV = "EMPTY_CSV"
+    DUPLICATE_COLUMN = "DUPLICATE_COLUMN"
     MISSING_REQUIRED_COLUMN = "MISSING_REQUIRED_COLUMN"
     MISSING_MAPPED_COLUMN = "MISSING_MAPPED_COLUMN"
     ROW_PARSE_ERROR = "ROW_PARSE_ERROR"
@@ -218,6 +221,24 @@ def ingest_option_chain_csv_file(
                     code=BuiltinCsvIngestionCode.EMPTY_CSV.value,
                     message="CSV has no header row",
                 ),
+            ),
+        )
+
+    duplicate_columns = [
+        column for column, count in Counter(reader.fieldnames).items() if count > 1
+    ]
+    if duplicate_columns:
+        return CsvIngestionResult(
+            snapshots=(),
+            raw_records=(),
+            errors=tuple(
+                CsvIngestionError(
+                    row_number=0,
+                    column=column,
+                    code=BuiltinCsvIngestionCode.DUPLICATE_COLUMN.value,
+                    message=f"duplicate column: {column}",
+                )
+                for column in duplicate_columns
             ),
         )
 

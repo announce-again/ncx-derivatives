@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
+from research.real_data.common._optional import require_pandas
 from research.real_data.common.calendar import add_previous_observation_date
 
 
@@ -16,7 +17,7 @@ def build_nearest_tenor_panel(
 ):
     """Select the closest eligible expiry, breaking ties toward shorter DTE."""
 
-    pandas = _import_pandas()
+    pandas = require_pandas()
     if len(target_tenors) != len(tenor_tolerances):
         raise ValueError("target_tenors and tenor_tolerances must have equal length")
     required = {
@@ -66,7 +67,7 @@ def add_daily_stability(
     group_columns: tuple[str, ...],
     split_dates: Iterable[tuple[str, object]] = (),
 ):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     data = add_previous_observation_date(panel, group_columns=group_columns)
     grouped = data.groupby(list(group_columns), sort=False, dropna=False)
     data["previous_atm_mid_iv"] = grouped["atm_mid_iv"].shift(1)
@@ -98,7 +99,6 @@ def add_daily_stability(
 
 
 def adjacent_expiry_gaps(expiry_panel):
-    pandas = _import_pandas()
     data = expiry_panel.copy().sort_values(
         ["underlying", "quote_date", "actual_dte", "expiration"], kind="mergesort"
     )
@@ -108,12 +108,3 @@ def adjacent_expiry_gaps(expiry_panel):
     data["adjacent_expiry_gap"] = (group["atm_mid_iv"].shift(-1) - data["atm_mid_iv"]).abs()
     data["adjacent_variance_gap"] = (group["atm_total_variance"].shift(-1) - data["atm_total_variance"]).abs()
     return data
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError("Research 001 requires pandas") from error
-    return pandas
-

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import csv
+import json
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import date, datetime
 from enum import Enum
 from hashlib import sha256
-import json
 from math import isnan
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from tempfile import NamedTemporaryFile
+from typing import Any
+
+_TEMPORARY_PREFIX = ".ncx-write-"
 
 
 def file_sha256(path: str | Path, *, chunk_size: int = 1024 * 1024) -> str:
@@ -30,8 +35,8 @@ def canonical_json_bytes(value: object) -> bytes:
 
 def write_json(path: str | Path, value: object) -> Path:
     output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(canonical_json_bytes(value) + b"\n")
+    with _atomic_output(output) as temporary:
+        temporary.write_bytes(canonical_json_bytes(value) + b"\n")
     return output
 
 
@@ -62,7 +67,7 @@ def write_output_hashes(directory: str | Path, path: str | Path) -> Path:
     output = Path(path)
     entries = []
     for candidate in sorted(item for item in root.rglob("*") if item.is_file()):
-        if candidate.resolve() == output.resolve():
+        if candidate.name.startswith(_TEMPORARY_PREFIX) or candidate.resolve() == output.resolve():
             continue
         entries.append(
             {
@@ -84,15 +89,33 @@ def logical_frame_sha256(frame, *, sort_by: Sequence[str]) -> str:
 
 def write_parquet(path: str | Path, frame, *, sort_by: Sequence[str]) -> Path:
     output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
     ordered = frame.sort_values(list(sort_by), kind="mergesort", ignore_index=True)
     try:
-        ordered.to_parquet(output, index=False)
+        with _atomic_output(output) as temporary:
+            ordered.to_parquet(temporary, index=False)
     except ImportError as error:
         raise RuntimeError(
             "writing Research 001 Parquet artifacts requires pyarrow or fastparquet"
         ) from error
     return output
+
+
+@contextmanager
+def _atomic_output(output: Path) -> Iterator[Path]:
+    """Publish complete artifacts so interrupted writes can be retried."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile(
+        dir=output.parent,
+        prefix=_TEMPORARY_PREFIX,
+        suffix=".tmp",
+        delete=False,
+    ) as file:
+        temporary = Path(file.name)
+    try:
+        yield temporary
+        temporary.replace(output)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _json_value(value: object) -> object:

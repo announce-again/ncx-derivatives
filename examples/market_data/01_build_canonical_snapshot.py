@@ -1,7 +1,7 @@
 """Build canonical market-data objects without CSV ingestion."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

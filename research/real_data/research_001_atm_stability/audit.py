@@ -3,9 +3,15 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from research.real_data.common.dataset_audit import audit_standardized_options, write_audit_outputs
+from research.real_data.common.dataset_audit import (
+    audit_standardized_options,
+    write_audit_outputs,
+)
 from research.real_data.common.deterministic_io import write_csv
-from research.real_data.common.optionsdx_adapter import STANDARD_COLUMNS, read_optionsdx_files
+from research.real_data.common.optionsdx_adapter import (
+    STANDARD_COLUMNS,
+    read_optionsdx_files,
+)
 
 
 def main() -> None:

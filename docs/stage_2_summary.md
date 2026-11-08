@@ -75,6 +75,9 @@ CSV ingestion reads external rows and produces canonical snapshots rather than
 DataFrames. It supports explicit schema and column mappings, required and
 optional columns, numeric/date/datetime parsing, missing-value interpretation,
 row-level ingestion errors, raw-row preservation, and deterministic ordering.
+Duplicate headers are reported as schema errors. Naive local timestamps that
+are ambiguous or nonexistent at a clock transition produce row errors. An
+explicit UTC offset identifies the intended instant.
 
 Normalisation handles provider representation differences, including option
 type values, exercise styles, UTC timestamps, expirations, symbols, exchanges,
@@ -123,7 +126,8 @@ pandas support is intentionally a boundary-layer feature. The domain layer does
 not depend on pandas. Interoperability supports:
 
 - snapshots to records and DataFrames
-- records and DataFrames back to snapshots
+- records and DataFrames back to snapshots, including trade rows and exact
+  nullable integer counts
 - enriched quotes to records and DataFrames
 - validation, cleaning, and static-arbitrage reports to records and DataFrames
 
@@ -158,6 +162,12 @@ Dataset identity is based on canonical logical content, including the canonical
 snapshot, accepted and rejected partitions, diagnostics, raw input hash, and
 semantic configuration. Audit-only metadata such as ingestion timestamp is
 preserved in the manifest but excluded from the dataset ID.
+
+Canonical JSON retains trades and the underlying quote of an empty quote
+snapshot. Trade content and previously omitted metadata contribute to the
+dataset ID. CSV output contains quote rows. Dataset rewrites stage files before
+publication, withdraw the old manifest, and publish the replacement manifest
+after all its files are in place.
 
 ## Version Meaning
 

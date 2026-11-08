@@ -21,7 +21,6 @@ from ncx_derivatives.market_data import (
     validate_underlying_quote,
 )
 
-
 UTC = timezone.utc
 AS_OF = datetime(2026, 7, 30, 14, 30, tzinfo=UTC)
 

@@ -106,5 +106,5 @@ input and requires identical delta and term-structure records.
 
 ## Next Stage
 
-Stage 3.2 is complete. The next roadmap item is Stage 3.3 - Non-Parametric
-Volatility Surface. No Stage 3.3 implementation is included in this work.
+Stage 3.2 is complete. The [Stage 3.3 non-parametric surface](volatility_surface.md)
+uses its selected smiles as interpolation inputs.

@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from math import isfinite, isinf, isnan, log
 from numbers import Real
-from typing import Any, Iterable
+from typing import Any
 
 from ncx_derivatives.greeks import vega as black_scholes_vega
 from ncx_derivatives.market_data import EnrichedOptionQuote, OptionType
+from ncx_derivatives.utils._optional import require_pandas
 
 from .black_scholes import (
     ImpliedVolatilityBoundsError,
     ImpliedVolatilityConvergenceError,
     ImpliedVolatilityInputError,
     _is_close_to_price_bound,
+    _no_arbitrage_bounds,
     call_implied_volatility,
     put_implied_volatility,
 )
@@ -152,57 +156,50 @@ def implied_volatility_chain_summary(
     if not isinstance(chain, ImpliedVolatilityChain):
         raise ValueError("chain must be an ImpliedVolatilityChain")
 
-    results = tuple(_iter_results(chain))
+    success_count = 0
+    failure_reasons: Counter[ImpliedVolatilityFailureReason] = Counter()
+    flags: Counter[ImpliedVolatilityDiagnosticFlag] = Counter()
+    for result in _iter_results(chain):
+        success_count += result.is_success
+        reason = result.failure_reason
+        if isinstance(reason, ImpliedVolatilityFailureReason):
+            failure_reasons[reason] += 1
+        if result.diagnostic_flags:
+            flags.update(set(result.diagnostic_flags))
+
+    result_count = 3 * len(chain.quotes)
     return ImpliedVolatilityChainSummary(
         quote_count=len(chain.quotes),
-        result_count=len(results),
-        success_count=sum(result.is_success for result in results),
-        failure_count=sum(not result.is_success for result in results),
-        missing_price_count=_count_failure_reason(
-            results,
-            ImpliedVolatilityFailureReason.MISSING_PRICE,
-        ),
-        outside_bounds_count=_count_failure_reason(
-            results,
-            ImpliedVolatilityFailureReason.OUTSIDE_BOUNDS,
-        ),
-        invalid_input_count=_count_failure_reason(
-            results,
-            ImpliedVolatilityFailureReason.INVALID_INPUT,
-        ),
-        solver_failed_count=_count_failure_reason(
-            results,
-            ImpliedVolatilityFailureReason.SOLVER_FAILED,
-        ),
-        non_finite_result_count=_count_failure_reason(
-            results,
-            ImpliedVolatilityFailureReason.NON_FINITE_RESULT,
-        ),
-        low_vega_count=_count_flag(
-            results,
-            ImpliedVolatilityDiagnosticFlag.LOW_VEGA,
-        ),
-        vega_unavailable_count=_count_flag(
-            results,
-            ImpliedVolatilityDiagnosticFlag.VEGA_UNAVAILABLE,
-        ),
-        upper_bound_iv_count=_count_flag(
-            results,
-            ImpliedVolatilityDiagnosticFlag.UPPER_BOUND_IV,
-        ),
+        result_count=result_count,
+        success_count=success_count,
+        failure_count=result_count - success_count,
+        missing_price_count=failure_reasons[ImpliedVolatilityFailureReason.MISSING_PRICE],
+        outside_bounds_count=failure_reasons[ImpliedVolatilityFailureReason.OUTSIDE_BOUNDS],
+        invalid_input_count=failure_reasons[ImpliedVolatilityFailureReason.INVALID_INPUT],
+        solver_failed_count=failure_reasons[ImpliedVolatilityFailureReason.SOLVER_FAILED],
+        non_finite_result_count=failure_reasons[ImpliedVolatilityFailureReason.NON_FINITE_RESULT],
+        low_vega_count=flags[ImpliedVolatilityDiagnosticFlag.LOW_VEGA],
+        vega_unavailable_count=flags[ImpliedVolatilityDiagnosticFlag.VEGA_UNAVAILABLE],
+        upper_bound_iv_count=flags[ImpliedVolatilityDiagnosticFlag.UPPER_BOUND_IV],
     )
 
 
 def implied_volatility_chain_to_records(
     chain: ImpliedVolatilityChain,
 ) -> tuple[dict[str, Any], ...]:
+    return tuple(_iter_chain_records(chain))
+
+
+def _iter_chain_records(
+    chain: ImpliedVolatilityChain,
+) -> Iterable[dict[str, Any]]:
     if not isinstance(chain, ImpliedVolatilityChain):
         raise ValueError("chain must be an ImpliedVolatilityChain")
-    return tuple(_quote_record(quote) for quote in chain.quotes)
+    return (_quote_record(quote) for quote in chain.quotes)
 
 
 def implied_volatility_chain_to_dataframe(chain: ImpliedVolatilityChain):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         implied_volatility_chain_to_records(chain),
         columns=IMPLIED_VOLATILITY_CHAIN_COLUMNS,
@@ -406,10 +403,19 @@ def _is_upper_bound_iv_result(
     quote: EnrichedOptionQuote,
     price: float,
 ) -> bool:
-    bounds = quote.no_arbitrage_bounds
-    if bounds is None:
+    if quote.time_to_maturity <= 0.0:
         return False
-    return _is_close_to_price_bound(price, bounds.upper_bound)
+    rate, dividend_yield = _flat_rates_from_discounts(quote)
+    contract = quote.quote.contract
+    _, upper_bound = _no_arbitrage_bounds(
+        contract.option_type.value,
+        quote.spot_price,
+        contract.strike,
+        quote.time_to_maturity,
+        rate,
+        dividend_yield,
+    )
+    return _is_close_to_price_bound(price, upper_bound)
 
 
 def _quote_record(quote: ImpliedVolatilityQuote) -> dict[str, Any]:
@@ -458,20 +464,6 @@ def _iter_results(
         yield quote.ask
 
 
-def _count_flag(
-    results: Iterable[ImpliedVolatilityResult],
-    flag: ImpliedVolatilityDiagnosticFlag,
-) -> int:
-    return sum(flag in result.diagnostic_flags for result in results)
-
-
-def _count_failure_reason(
-    results: Iterable[ImpliedVolatilityResult],
-    reason: ImpliedVolatilityFailureReason,
-) -> int:
-    return sum(result.failure_reason is reason for result in results)
-
-
 def _flags_value(flags: tuple[ImpliedVolatilityDiagnosticFlag, ...]) -> str:
     return "|".join(flag.value for flag in flags)
 
@@ -487,13 +479,3 @@ def _validate_non_negative_finite(value: float, field_name: str) -> None:
         raise ValueError(f"{field_name} must be finite")
     if value < 0.0:
         raise ValueError(f"{field_name} must be non-negative")
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError(
-            "pandas interoperability requires pandas to be installed",
-        ) from error
-    return pandas

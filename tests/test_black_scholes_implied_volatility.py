@@ -1,12 +1,33 @@
-from math import exp, isinf
+from math import exp, isinf, nan
 
 import pytest
 
 from ncx_derivatives.pricing import call_price, put_price
 from ncx_derivatives.volatility import (
+    ImpliedVolatilityConvergenceError,
+    ImpliedVolatilityInputError,
     call_implied_volatility,
     put_implied_volatility,
 )
+
+
+@pytest.mark.parametrize("solver", [call_implied_volatility, put_implied_volatility])
+def test_iv_rejects_non_finite_price_and_rate(solver):
+    with pytest.raises(ImpliedVolatilityInputError, match="finite"):
+        solver(nan, 100, 100, 1, 0.05)
+    with pytest.raises(ImpliedVolatilityInputError, match="finite"):
+        solver(10, 100, 100, 1, nan)
+
+
+@pytest.mark.parametrize(
+    ("price_function", "solver"),
+    [(call_price, call_implied_volatility), (put_price, put_implied_volatility)],
+)
+def test_iv_public_iteration_limit_raises_on_exhaustion(price_function, solver):
+    price = price_function(100, 110, 1, 0.03, 0.33)
+    with pytest.raises(ImpliedVolatilityConvergenceError, match="max_iterations"):
+        solver(price, 100, 110, 1, 0.03, max_iterations=1)
+    assert solver(price, 100, 110, 1, 0.03, max_iterations=100) == pytest.approx(0.33)
 
 
 @pytest.mark.parametrize(

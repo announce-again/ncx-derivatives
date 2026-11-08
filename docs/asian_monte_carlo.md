@@ -27,6 +27,8 @@ result = monte_carlo_asian_call_price(
 ```
 
 The return type is `MonteCarloResult`, matching the European Monte Carlo API.
+At zero maturity, an integer monitoring schedule collapses to the current spot
+and the pricer returns the intrinsic payoff with zero sampling error.
 
 ## Capabilities
 

@@ -5,6 +5,10 @@ import pytest
 from ncx_derivatives.pricing import call_price, put_price
 
 
+def test_deep_out_of_money_call_has_positive_tail_value():
+    assert call_price(100, 218, 0.25, 0, 0.2) == pytest.approx(5.99050855132617e-15, rel=1e-8, abs=0)
+
+
 def test_black_scholes_benchmark_prices() -> None:
     """Match a standard Black-Scholes benchmark."""
 

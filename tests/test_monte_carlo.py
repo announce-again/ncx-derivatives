@@ -1,4 +1,4 @@
-from math import exp, log
+from math import exp, isfinite, log, nextafter
 
 import pytest
 
@@ -13,6 +13,20 @@ from ncx_derivatives.pricing import (
     call_price,
     put_price,
 )
+
+
+@pytest.mark.parametrize(("simulations", "antithetic"), [(1, False), (2, True)])
+def test_stochastic_mc_requires_two_independent_observations(simulations, antithetic):
+    with pytest.raises(ValueError, match="independent observations"):
+        monte_carlo_call_price(100, 100, 1, 0.05, 0.2, simulations=simulations, antithetic=antithetic)
+    result = monte_carlo_call_price(100, 100, 0, 0.05, 0.2, simulations=simulations, antithetic=antithetic)
+    assert result.standard_error == 0
+
+
+def test_mc_confidence_level_nearest_one_still_has_finite_interval():
+    result = monte_carlo_call_price(100, 100, 1, 0.05, 0.2, simulations=10, seed=1, confidence_level=nextafter(1, 0))
+    assert all(isfinite(bound) for bound in result.confidence_interval)
+    assert result.confidence_interval[0] < result.price < result.confidence_interval[1]
 
 
 def test_gbm_terminal_mean_matches_risk_neutral_forward() -> None:

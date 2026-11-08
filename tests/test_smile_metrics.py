@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from math import exp, sqrt
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,20 +21,26 @@ from ncx_derivatives.pricing import call_price, put_price
 from ncx_derivatives.volatility import (
     SMILE_METRIC_COLUMNS,
     AtmInterpolationMethod,
+    CalibrationWeighting,
     LocalCurvatureMethod,
     LocalSkewMethod,
     LocalSmileFitConfig,
     SmileMetricConfig,
     SmileMetricFailureReason,
     SmileMetricStatus,
+    SSVISurface,
     SurfaceFailureReason,
     SurfaceViolationKind,
+    SVIParameters,
     SyntheticOptionDatasetConfig,
     VolatilitySurface,
     build_implied_volatility_chain,
     build_volatility_smiles,
     calculate_smile_metrics,
     calculate_smile_metrics_for_smiles,
+    calibrate_ssvi,
+    calibrate_svi,
+    compare_parametric_holdouts,
     diagnose_surface_arbitrage,
     interpolate_total_variance,
     run_csv_volatility_pipeline,
@@ -44,7 +51,6 @@ from ncx_derivatives.volatility import (
     synthetic_volatility_pipeline_cleaning_config,
     write_synthetic_option_quote_csv,
 )
-
 
 UTC = timezone.utc
 AS_OF = datetime(2026, 7, 30, 14, 30, tzinfo=UTC)
@@ -130,6 +136,68 @@ def test_maturity_interpolation_retains_exact_nodes_and_rejects_extrapolation():
     assert interpolate_total_variance((), 0.2).failure_reason is SurfaceFailureReason.NO_MATURITY_NODES
     with pytest.raises(ValueError, match="duplicate"):
         interpolate_total_variance(((0.1, 0.01), (0.1, 0.02)), 0.1)
+
+
+@pytest.mark.parametrize("weighting", list(CalibrationWeighting))
+def test_raw_svi_recovers_synthetic_smile(weighting):
+    pytest.importorskip("scipy")
+    truth = SVIParameters(0.026, 0.11, -0.32, 0.025, 0.18)
+    coordinates = (-0.35, -0.24, -0.12, -0.05, 0.0, 0.06, 0.12, 0.21, 0.34)
+    smile = _smile_from_total_variance(coordinates, truth.total_variance)
+    fitted = calibrate_svi(smile, weighting=weighting)
+
+    assert fitted.converged and fitted.attempts > 1
+    assert fitted.omitted_points == 0
+    assert fitted.weighted_rmse < 1e-8
+    assert fitted.model.total_variance(0.17) == pytest.approx(truth.total_variance(0.17), abs=1e-7)
+    assert max(fitted.model.wing_slopes) < 2
+    assert fitted.minimum_sampled_butterfly_factor > 0
+
+
+def test_ssvi_recovers_surface_and_compares_identical_holdouts():
+    pytest.importorskip("scipy")
+    truth = SSVISurface(((1, 0.04), (2, 0.075), (3, 0.10)), -0.4, 0.55)
+    coordinates = (-0.35, -0.24, -0.12, -0.05, 0.0, 0.06, 0.12, 0.21, 0.34)
+    smiles = tuple(_smile_from_total_variance(coordinates, lambda k: truth.total_variance(k, t),
+                                             expiration_days=365 * t) for t in (1, 2, 3))
+    fitted = calibrate_ssvi(reversed(smiles))
+
+    assert fitted.converged
+    assert fitted.weighted_rmse < 1e-8
+    assert fitted.minimum_sampled_butterfly_factor > 0
+    assert fitted.model.slice_parameters(1.5).total_variance(0.25) == pytest.approx(fitted.model.total_variance(0.25, 1.5))
+    assert fitted.model.total_variance(0.25, 1.5) == pytest.approx(truth.total_variance(0.25, 1.5), abs=1e-7)
+    assert fitted.model.total_variance(0.0, 0.5) is None
+    holdouts = compare_parametric_holdouts(smiles)
+    assert len(holdouts) == 3
+    for row in holdouts:
+        assert row.ssvi_total_variance == pytest.approx(row.observed_total_variance, abs=1e-7)
+        assert row.svi_total_variance == pytest.approx(row.observed_total_variance, abs=1e-7)
+        assert abs(row.nonparametric_total_variance - row.observed_total_variance) > 1e-5
+
+
+def test_ssvi_rejects_calendar_and_butterfly_constraint_violations():
+    with pytest.raises(ValueError, match="must not decrease"):
+        SSVISurface(((1, 0.05), (2, 0.04)), 0.2, 0.5)
+    with pytest.raises(ValueError, match="eta"):
+        SSVISurface(((1, 0.04), (2, 0.05)), -0.5, 1.5)
+
+
+@pytest.mark.parametrize("has_converged_fit", [True, False])
+def test_parametric_multistart_prioritizes_convergence(has_converged_fit):
+    from ncx_derivatives.volatility.parametric import _fit
+
+    stalled = SimpleNamespace(success=False, cost=0.01, nfev=10)
+    candidate = SimpleNamespace(success=has_converged_fit, cost=0.02, nfev=8)
+    other = SimpleNamespace(success=has_converged_fit, cost=0.03, nfev=7)
+    fits = iter((stalled, candidate, other))
+
+    best, evaluations = _fit(
+        lambda *args, **kwargs: next(fits), None, ((), (), ()), ((), ()), 10
+    )
+
+    assert best is (candidate if has_converged_fit else stalled)
+    assert evaluations == 25
 
 
 def test_surface_queries_a_ragged_grid_and_reports_holdout_residuals():
@@ -416,7 +484,7 @@ def test_local_fit_window_can_fail_without_changing_atm_interpolation() -> None:
 
 
 def test_metric_records_dataframe_and_batch_ordering_are_deterministic() -> None:
-    pd = pytest.importorskip("pandas")
+    pytest.importorskip("pandas")
     long_smile = _smile_from_total_variance(
         (-0.05, 0.03, 0.08),
         lambda k: 0.04 - 0.03 * k + 0.10 * k * k,

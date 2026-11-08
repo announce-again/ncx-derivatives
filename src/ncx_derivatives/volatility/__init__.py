@@ -20,14 +20,6 @@ from .chains import (
     implied_volatility_chain_to_dataframe,
     implied_volatility_chain_to_records,
 )
-from .pipeline import (
-    VolatilityChainCsvExport,
-    VolatilityPipelineCounts,
-    VolatilityPipelineResult,
-    VolatilityPipelineTimings,
-    run_csv_volatility_pipeline,
-    write_implied_volatility_chain_csv,
-)
 from .delta_metrics import (
     BUTTERFLY_COLUMNS,
     DELTA_STRUCTURE_COLUMNS,
@@ -41,12 +33,12 @@ from .delta_metrics import (
     DeltaVolatilityResult,
     RiskReversalResult,
     SmileDeltaMetrics,
+    butterfly_results_to_dataframe,
+    butterfly_results_to_records,
     calculate_risk_reversal,
     calculate_smile_delta_metrics,
     calculate_smile_delta_metrics_for_smiles,
     calculate_symmetric_delta_butterfly,
-    butterfly_results_to_dataframe,
-    butterfly_results_to_records,
     delta_structure_results_to_dataframe,
     delta_structure_results_to_records,
     delta_volatility_results_to_dataframe,
@@ -54,6 +46,25 @@ from .delta_metrics import (
     interpolate_smile_at_delta,
     risk_reversal_results_to_dataframe,
     risk_reversal_results_to_records,
+)
+from .parametric import (
+    CalibrationResidual,
+    CalibrationResult,
+    CalibrationWeighting,
+    ParametricHoldout,
+    SSVISurface,
+    SVIParameters,
+    calibrate_ssvi,
+    calibrate_svi,
+    compare_parametric_holdouts,
+)
+from .pipeline import (
+    VolatilityChainCsvExport,
+    VolatilityPipelineCounts,
+    VolatilityPipelineResult,
+    VolatilityPipelineTimings,
+    run_csv_volatility_pipeline,
+    write_implied_volatility_chain_csv,
 )
 from .smile_analysis import (
     SMILE_ANALYSIS_SUMMARY_COLUMNS,
@@ -147,6 +158,15 @@ from .term_structure import (
 )
 
 __all__ = [
+    "CalibrationResidual",
+    "CalibrationResult",
+    "CalibrationWeighting",
+    "ParametricHoldout",
+    "SSVISurface",
+    "SVIParameters",
+    "calibrate_ssvi",
+    "calibrate_svi",
+    "compare_parametric_holdouts",
     "AtmInterpolationMethod",
     "AtmVolatilityResult",
     "ButterflyResult",

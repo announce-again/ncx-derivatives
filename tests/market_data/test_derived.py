@@ -1,6 +1,7 @@
 from dataclasses import FrozenInstanceError
 from datetime import date, datetime, timedelta, timezone
 from math import exp, log
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -28,7 +29,6 @@ from ncx_derivatives.market_data import (
     relative_spread,
     year_fraction,
 )
-
 
 UTC = timezone.utc
 
@@ -93,6 +93,19 @@ def test_year_fraction_supports_intraday_datetimes() -> None:
     end = start + timedelta(hours=12)
 
     assert year_fraction(start, end) == pytest.approx(0.5 / 365.0)
+
+
+def test_year_fraction_measures_elapsed_time_across_daylight_saving_changes() -> None:
+    new_york = ZoneInfo("America/New_York")
+    spring_start = datetime(2026, 3, 7, 12, tzinfo=new_york)
+    spring_end = datetime(2026, 3, 8, 12, tzinfo=new_york)
+    fall_start = datetime(2026, 11, 1, 1, 45, tzinfo=new_york)
+    fall_end = datetime(2026, 11, 1, 1, 15, tzinfo=new_york, fold=1)
+
+    assert year_fraction(spring_start, spring_end) == pytest.approx(23 / (24 * 365))
+    assert year_fraction(fall_start, fall_end) == pytest.approx(0.5 / (24 * 365))
+    with pytest.raises(ValueError, match="end"):
+        year_fraction(fall_end, fall_start)
 
 
 def test_year_fraction_rejects_naive_datetime_and_negative_period() -> None:

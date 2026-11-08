@@ -1,8 +1,8 @@
 """Apply configurable cleaning and inspect accepted/rejected partitions."""
 
+import sys
 from collections import Counter
 from pathlib import Path
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -12,6 +12,7 @@ from _common import (  # noqa: E402
     cleaning_config,
     sample_snapshot,
 )
+
 from ncx_derivatives.market_data import (  # noqa: E402
     clean_enriched_option_quotes,
     enrich_option_chain_snapshot,

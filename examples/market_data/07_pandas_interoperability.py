@@ -1,16 +1,17 @@
 """Use pandas at the boundary while preserving canonical objects."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _common import VALUATION_DATE, carry_assumptions, sample_snapshot  # noqa: E402
+
 from ncx_derivatives.market_data import (  # noqa: E402
     OptionChainSnapshot,
     UnderlyingQuote,
-    enriched_quotes_to_dataframe,
     enrich_option_chain_snapshot,
+    enriched_quotes_to_dataframe,
     option_chain_from_dataframe,
     option_chain_to_dataframe,
 )

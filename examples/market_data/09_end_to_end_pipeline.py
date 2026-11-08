@@ -1,8 +1,8 @@
 """Run the full Stage 2 market-data pipeline on a fixed sample."""
 
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -14,15 +14,15 @@ from _common import (  # noqa: E402
     output_root,
     sample_csv_path,
 )
+
 from ncx_derivatives.market_data import (  # noqa: E402
     clean_enriched_option_quotes,
     diagnose_static_arbitrage,
-    enriched_quotes_to_dataframe,
     enrich_option_chain_snapshot,
+    enriched_quotes_to_dataframe,
     validate_option_chain_snapshot,
     write_market_data_dataset,
 )
-
 
 INGESTED_AT = datetime(2026, 7, 30, 14, 31, tzinfo=timezone.utc)
 

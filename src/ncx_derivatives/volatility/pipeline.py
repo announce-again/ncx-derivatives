@@ -3,10 +3,8 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from datetime import date
-from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
-from typing import Any
 
 from ncx_derivatives.market_data import (
     CarryAssumptions,
@@ -21,12 +19,13 @@ from ncx_derivatives.market_data import (
     enrich_option_chain_snapshot,
     ingest_option_chain_csv,
 )
+from ncx_derivatives.utils._files import csv_cell, file_sha256
 
 from .chains import (
     IMPLIED_VOLATILITY_CHAIN_COLUMNS,
     ImpliedVolatilityChain,
+    _iter_chain_records,
     build_implied_volatility_chain,
-    implied_volatility_chain_to_records,
 )
 
 
@@ -96,7 +95,7 @@ class VolatilityPipelineResult:
     def input_rows_per_second(self) -> float:
         if self.timings.total_seconds == 0.0:
             return 0.0
-        return self.counts.input_row_count / self.timings.total_seconds
+        return len(self.ingestion.raw_records) / self.timings.total_seconds
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,7 +173,7 @@ def write_implied_volatility_chain_csv(
 
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    records = implied_volatility_chain_to_records(chain)
+    records = _iter_chain_records(chain)
     with output_path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(
             file,
@@ -184,25 +183,15 @@ def write_implied_volatility_chain_csv(
         writer.writeheader()
         writer.writerows(
             {
-                field: _csv_value(record[field])
+                field: csv_cell(record[field])
                 for field in IMPLIED_VOLATILITY_CHAIN_COLUMNS
             }
             for record in records
         )
 
-    payload = output_path.read_bytes()
     return VolatilityChainCsvExport(
         path=output_path,
-        row_count=len(records),
-        byte_count=len(payload),
-        sha256=sha256(payload).hexdigest(),
+        row_count=len(chain.quotes),
+        byte_count=output_path.stat().st_size,
+        sha256=file_sha256(output_path),
     )
-
-
-def _csv_value(value: Any) -> Any:
-    if value is None:
-        return ""
-    isoformat = getattr(value, "isoformat", None)
-    if callable(isoformat):
-        return isoformat()
-    return value

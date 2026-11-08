@@ -15,13 +15,13 @@ import argparse
 import csv
 import json
 import random
+from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 from math import exp, isfinite, sqrt
 from pathlib import Path
 from statistics import fmean
-from typing import Iterable, Sequence
 
 from ncx_derivatives.greeks import call_delta, put_delta
 from ncx_derivatives.market_data import (
@@ -39,7 +39,6 @@ from ncx_derivatives.volatility import (
     run_csv_volatility_pipeline,
     synthetic_option_quote_csv_config,
 )
-
 
 METRICS = ("atm", "skew", "curvature", "rr25", "bf25")
 EXPERIMENT_COLUMNS = (

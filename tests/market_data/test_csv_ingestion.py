@@ -1,14 +1,14 @@
 from io import StringIO
-from types import MappingProxyType
 from pathlib import Path
-import pytest
+from types import MappingProxyType
 
+import pytest
 from _helpers import require_zoneinfo
+
 from ncx_derivatives.market_data import (
     BuiltinCsvIngestionCode,
     CsvColumnMapping,
     CsvIngestionConfig,
-    ExerciseStyle,
     OptionType,
     SourceMetadata,
     ingest_option_chain_csv,
@@ -41,6 +41,42 @@ def _canonical_mapping() -> CsvColumnMapping:
         underlying_ask="underlying_ask",
         underlying_timestamp="underlying_timestamp",
     )
+
+
+def test_duplicate_csv_columns_are_reported_before_parsing_rows():
+    mapping = CsvColumnMapping("underlying", "expiration", "strike", "type", "quote_ts", "bid", "ask")
+    data = StringIO(
+        "underlying,expiration,strike,type,quote_ts,bid,bid,ask\n"
+        "AAPL,2026-08-21,100,call,2026-07-30T14:30:00Z,1,4,5\n"
+    )
+    result = ingest_option_chain_csv_file(data, CsvIngestionConfig(mapping))
+
+    assert not result.snapshots and not result.raw_records
+    (error,) = result.errors
+    assert error.column == "bid"
+    assert error.code == BuiltinCsvIngestionCode.DUPLICATE_COLUMN.value
+
+
+@pytest.mark.parametrize(
+    ("wall_time", "message"),
+    [("2026-03-08T02:30:00", "nonexistent"), ("2026-11-01T01:30:00", "ambiguous")],
+)
+def test_csv_requires_offset_for_dst_transition_times(wall_time, message):
+    config = CsvIngestionConfig(
+        CsvColumnMapping("underlying", "expiration", "strike", "type", "quote_ts", "bid", "ask"),
+        assume_timezone=require_zoneinfo("America/New_York"),
+    )
+    data = StringIO(
+        "underlying,expiration,strike,type,quote_ts,bid,ask\n"
+        f"AAPL,2026-12-21,100,call,{wall_time},4,5\n"
+        f"AAPL,2026-12-21,100,call,{wall_time}-04:00,4,5\n"
+    )
+    result = ingest_option_chain_csv_file(data, config)
+
+    (error,) = result.errors
+    assert error.column == "quote_ts"
+    assert message in error.message
+    assert len(result.snapshots) == 1
 
 
 def test_ingests_canonical_csv_into_snapshots() -> None:

@@ -66,12 +66,34 @@ signed-delta/RR/BF conventions, and
 [volatility term structures](docs/volatility_term_structure.md) for expiry-level
 representation. The [Stage 3.2 completion summary](docs/stage_3_2_summary.md)
 documents the 50,000-row conservation and separate throughput boundaries.
+See [volatility surfaces and arbitrage diagnostics](docs/volatility_surface.md),
+[SVI and SSVI calibration](docs/parametric_volatility.md), and the
+[SPY volatility dynamics study](research/real_data/volatility_dynamics.md) for
+Stages 3.3–3.6.
 
 ## Installation
 
 ```bash
-pip install -e .
+python -m pip install -e .
 ```
+
+Install the development or research dependencies from the repository root:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,research]"
+```
+
+## Repository layout
+
+| Directory | Contents |
+| --- | --- |
+| [src/ncx_derivatives](src/ncx_derivatives) | Installable pricing, Greeks, market data, and volatility library |
+| [examples](examples/README.md) | Runnable pricing and data workflows |
+| [tests](tests) | Unit tests, pipeline smoke tests, and small provider fixtures |
+| [docs](docs/roadmap.md) | Model conventions, pipeline documentation, and roadmap |
+| [research](research/README.md) | Research scripts, methodology, and published outputs |
+| [data](data) | Local raw inputs, intermediate checkpoints, and processed datasets |
 
 ## Quick start
 
@@ -195,13 +217,19 @@ mc_delta = numerical_delta(
 - [x] Stage 1.7: Asian option Monte Carlo pricing
 - [x] Stage 1.8: Numerical Greeks
 - [x] Stage 2: Market data infrastructure
-- [ ] Stage 3: Volatility research
+- [x] Stage 3: Volatility research
+- [ ] Stage 4: Strategy research
 - [ ] Stage 5: Portfolio risk
 - [ ] Stage 6: Market-making simulation
 
 ## Testing
 
+Run these commands from the repository root after installing the development
+dependencies. The default suite uses checked-in fixtures and synthetic inputs.
+
 ```bash
-pytest
-pytest -m large tests/test_volatility_pipeline_large.py -vv
+python -m pytest
+python -m pytest -m large tests/test_volatility_pipeline_large.py -vv
 ```
+
+Run the static checks with `ruff check src tests research examples`.

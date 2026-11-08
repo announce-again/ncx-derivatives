@@ -5,8 +5,10 @@ from math import isfinite
 from pathlib import Path
 from typing import Any
 
-from .deterministic_io import write_csv, write_json
+from research.real_data.common._optional import require_pandas
+
 from .calendar import missing_business_date_ranges
+from .deterministic_io import write_csv, write_json
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,7 +23,7 @@ class DatasetAuditResult:
 def audit_standardized_options(frame) -> DatasetAuditResult:
     """Audit the canonical long table without modifying or dropping rows."""
 
-    pandas = _import_pandas()
+    pandas = require_pandas()
     required = {
         "underlying_symbol", "quote_date", "underlying_price", "expiration",
         "vendor_dte", "strike", "option_type", "bid", "ask",
@@ -50,7 +52,7 @@ def audit_standardized_options(frame) -> DatasetAuditResult:
     add("MISSING_QUOTE_DATE", data["quote_date"].isna(), "quote date is missing or invalid")
     add("MISSING_EXPIRATION", data["expiration"].isna(), "expiration is missing or invalid")
     add("EXPIRATION_BEFORE_QUOTE", data["expiration"] < data["quote_date"], "expiration precedes quote date")
-    add("WEEKEND_QUOTE_DATE", data["quote_date"].dt.dayofweek >= 5, "quote date is Saturday or Sunday")
+    add("WEEKEND_QUOTE_DATE", data["quote_date"].dt.day_of_week >= 5, "quote date is Saturday or Sunday")
     add("DTE_MISMATCH", (data["vendor_dte"] - calendar_dte).abs() > 1.0, "vendor DTE differs from calendar DTE by more than one day")
     finite_spot = data["underlying_price"].map(_is_finite)
     finite_strike = data["strike"].map(_is_finite)
@@ -212,7 +214,7 @@ def write_audit_outputs(result: DatasetAuditResult, output_directory: str | Path
 
 
 def _group_summary(data, keys, flags):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     working = data.copy()
     for code, mask, _ in flags:
         working[code.lower()] = mask.astype("int64")
@@ -226,7 +228,7 @@ def _group_summary(data, keys, flags):
 
 
 def _date_value(value) -> str | None:
-    if value is None or _import_pandas().isna(value):
+    if value is None or require_pandas().isna(value):
         return None
     return value.date().isoformat() if hasattr(value, "date") else str(value)
 
@@ -247,11 +249,3 @@ def _quality_report(result: DatasetAuditResult) -> str:
         "Failures are non-destructive diagnostics. No source row was silently dropped. "
         "Review `audit_failures.csv` before declaring a dataset eligible.\n"
     )
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError("Research 001 requires pandas") from error
-    return pandas

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from research.real_data.common._optional import require_pandas
 
 MARKET_PERIODS = (
     ("2010-2012", "2010-01-01", "2012-12-31"),
@@ -11,7 +12,7 @@ MARKET_PERIODS = (
 
 
 def add_market_period(panel):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     data = panel.copy()
     dates = pandas.to_datetime(data["quote_date"])
     data["market_period"] = None
@@ -33,7 +34,7 @@ def freeze_regime_thresholds(panel, *, level_column: str = "atm_mid_iv") -> dict
 
 
 def add_volatility_regime(panel, thresholds: dict[str, float], *, level_column: str = "atm_mid_iv"):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     required = {"medium", "high", "extreme"}
     if set(thresholds) != required:
         raise ValueError(f"thresholds must contain exactly {sorted(required)}")
@@ -55,7 +56,6 @@ def stability_summary(
     group_columns: tuple[str, ...],
     coverage_scope_columns: tuple[str, ...] = (),
 ):
-    pandas = _import_pandas()
     data = panel.copy()
     observed_dates = data.groupby(list(group_columns), dropna=False)["quote_date"].transform("nunique")
     if coverage_scope_columns:
@@ -79,11 +79,3 @@ def stability_summary(
         median_relative_instability=("relative_atm_iv_change", lambda values: values.abs().median()),
     ).reset_index()
     return result.sort_values(list(group_columns), kind="mergesort", ignore_index=True)
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError("Research 001 requires pandas") from error
-    return pandas

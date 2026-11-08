@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from datetime import date, datetime
 from math import isfinite
-from typing import Any, Iterable, Mapping
+from typing import Any
+
+from ncx_derivatives.utils._optional import require_pandas
 
 from .cleaning import CleaningResult, EnrichedCleaningResult
 from .derived import EnrichedOptionQuote
@@ -11,13 +14,13 @@ from .models import (
     OptionChainSnapshot,
     OptionContract,
     OptionQuote,
+    OptionTrade,
     OptionType,
     SourceMetadata,
     UnderlyingQuote,
 )
 from .static_arbitrage import StaticArbitrageReport
 from .validation import ValidationReport
-
 
 OPTION_CHAIN_COLUMNS = (
     "underlying_symbol",
@@ -59,6 +62,15 @@ OPTION_CHAIN_COLUMNS = (
     "underlying_ask",
     "underlying_bid_venue",
     "underlying_ask_venue",
+)
+
+_TRADE_COLUMNS = (
+    "record_type", "trade_timestamp", "trade_price", "trade_size", "trade_venue",
+    "trade_provider", "trade_dataset", "trade_schema", "trade_source_record_id",
+)
+_QUOTE_INTEGER_COLUMNS = ("bid_size", "ask_size", "session_volume", "open_interest")
+_UNDERLYING_METADATA_COLUMNS = (
+    "underlying_provider", "underlying_dataset", "underlying_schema", "underlying_source_record_id",
 )
 
 ENRICHED_QUOTE_COLUMNS = ("underlying_symbol",) + OPTION_CHAIN_COLUMNS[6:33] + (
@@ -116,7 +128,16 @@ def option_chain_to_records(
 ) -> tuple[dict[str, Any], ...]:
     if not isinstance(snapshot, OptionChainSnapshot):
         raise ValueError("snapshot must be an OptionChainSnapshot")
+    return _snapshot_quote_records(snapshot) + _snapshot_trade_records(snapshot)
+
+
+def _snapshot_quote_records(snapshot: OptionChainSnapshot) -> tuple[dict[str, Any], ...]:
     return tuple(_quote_record(snapshot, quote) for quote in snapshot.quotes)
+
+
+def _snapshot_trade_records(snapshot: OptionChainSnapshot) -> tuple[dict[str, Any], ...]:
+    fields = _snapshot_fields(snapshot)
+    return tuple({**fields, **_trade_record(trade)} for trade in snapshot.trades)
 
 
 def option_chain_from_records(
@@ -136,22 +157,36 @@ def option_chain_from_records(
 
     snapshot_metadata = _consistent_snapshot_metadata(rows)
     underlying_quote = _consistent_underlying_quote(rows)
-    quotes = tuple(_quote_from_record(row) for row in rows)
+    quotes = []
+    trades = []
+    for row in rows:
+        record_type = _optional_text(row.get("record_type"))
+        if record_type in (None, "quote"):
+            quotes.append(_quote_from_record(row))
+        elif record_type == "trade":
+            trades.append(_trade_from_record(row))
+        else:
+            raise ValueError(f"unknown option chain record type: {record_type!r}")
     return OptionChainSnapshot(
         underlying_symbol=underlying_symbols.pop(),
         as_of=snapshot_times.pop(),
-        quotes=quotes,
+        quotes=tuple(quotes),
+        trades=tuple(trades),
         underlying_quote=underlying_quote,
         metadata=snapshot_metadata,
     )
 
 
 def option_chain_to_dataframe(snapshot: OptionChainSnapshot):
-    pandas = _import_pandas()
-    return pandas.DataFrame.from_records(
-        option_chain_to_records(snapshot),
-        columns=OPTION_CHAIN_COLUMNS,
-    )
+    records = option_chain_to_records(snapshot)
+    columns = OPTION_CHAIN_COLUMNS
+    integer_columns = _QUOTE_INTEGER_COLUMNS
+    if snapshot.underlying_quote is not None and snapshot.underlying_quote.metadata is not None:
+        columns += _UNDERLYING_METADATA_COLUMNS
+    if snapshot.trades:
+        columns += _TRADE_COLUMNS
+        integer_columns += ("trade_size",)
+    return _quote_dataframe(records, columns, integer_columns)
 
 
 def option_chain_from_dataframe(frame) -> OptionChainSnapshot:
@@ -172,11 +207,22 @@ def enriched_quotes_to_records(
 
 
 def enriched_quotes_to_dataframe(enriched_quotes: Iterable[EnrichedOptionQuote]):
-    pandas = _import_pandas()
-    return pandas.DataFrame.from_records(
+    return _quote_dataframe(
         enriched_quotes_to_records(enriched_quotes),
-        columns=ENRICHED_QUOTE_COLUMNS,
+        ENRICHED_QUOTE_COLUMNS,
+        _QUOTE_INTEGER_COLUMNS,
     )
+
+
+def _quote_dataframe(records, columns, integer_columns):
+    pandas = require_pandas()
+    frame = pandas.DataFrame.from_records(
+        records, columns=[column for column in columns if column not in integer_columns]
+    )
+    for column in integer_columns:
+        values = pandas.Series((row.get(column) for row in records), dtype=object)
+        frame.insert(columns.index(column), column, values)
+    return frame
 
 
 def validation_report_to_records(
@@ -197,7 +243,7 @@ def validation_report_to_records(
 
 
 def validation_report_to_dataframe(report: ValidationReport):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         validation_report_to_records(report),
         columns=VALIDATION_REPORT_COLUMNS,
@@ -231,7 +277,7 @@ def cleaning_result_to_records(
 
 
 def cleaning_result_to_dataframe(result: CleaningResult | EnrichedCleaningResult):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         cleaning_result_to_records(result),
         columns=CLEANING_DIAGNOSTIC_COLUMNS,
@@ -257,7 +303,7 @@ def static_arbitrage_report_to_records(
 
 
 def static_arbitrage_report_to_dataframe(report: StaticArbitrageReport):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         static_arbitrage_report_to_records(report),
         columns=STATIC_ARBITRAGE_COLUMNS,
@@ -268,9 +314,12 @@ def _quote_record(
     snapshot: OptionChainSnapshot,
     quote: OptionQuote,
 ) -> dict[str, Any]:
-    contract = quote.contract
+    return {**_snapshot_fields(snapshot), **_option_quote_record(quote)}
+
+
+def _snapshot_fields(snapshot: OptionChainSnapshot) -> dict[str, Any]:
     underlying = snapshot.underlying_quote
-    return {
+    fields = {
         "underlying_symbol": snapshot.underlying_symbol,
         "snapshot_as_of": snapshot.as_of,
         "snapshot_provider": _metadata_value(snapshot.metadata, "provider"),
@@ -280,7 +329,6 @@ def _quote_record(
             snapshot.metadata,
             "source_record_id",
         ),
-        **_option_quote_record(quote),
         "underlying_quote_timestamp": (
             None if underlying is None else underlying.quote_timestamp
         ),
@@ -290,6 +338,14 @@ def _quote_record(
         "underlying_bid_venue": None if underlying is None else underlying.bid_venue,
         "underlying_ask_venue": None if underlying is None else underlying.ask_venue,
     }
+    if underlying is not None and underlying.metadata is not None:
+        fields.update(
+            {
+                column: _metadata_value(underlying.metadata, column.removeprefix("underlying_"))
+                for column in _UNDERLYING_METADATA_COLUMNS
+            }
+        )
+    return fields
 
 
 def _enriched_record(item: EnrichedOptionQuote) -> dict[str, Any]:
@@ -317,26 +373,9 @@ def _enriched_record(item: EnrichedOptionQuote) -> dict[str, Any]:
 
 
 def _option_quote_record(quote: OptionQuote) -> dict[str, Any]:
-    contract = quote.contract
     return {
-        "underlying_symbol": contract.underlying_symbol,
+        **_contract_record(quote.contract),
         "quote_timestamp": quote.quote_timestamp,
-        "expiration": contract.expiration,
-        "strike": contract.strike,
-        "option_type": contract.option_type.value,
-        "exercise_style": _enum_value(contract.exercise_style),
-        "contract_multiplier": contract.contract_multiplier,
-        "currency": contract.currency,
-        "source_contract_id": contract.source_contract_id,
-        "display_symbol": contract.display_symbol,
-        "listing_exchange": contract.listing_exchange,
-        "contract_provider": _metadata_value(contract.metadata, "provider"),
-        "contract_dataset": _metadata_value(contract.metadata, "dataset"),
-        "contract_schema": _metadata_value(contract.metadata, "schema"),
-        "contract_source_record_id": _metadata_value(
-            contract.metadata,
-            "source_record_id",
-        ),
         "bid": quote.bid,
         "ask": quote.ask,
         "bid_size": quote.bid_size,
@@ -356,8 +395,45 @@ def _option_quote_record(quote: OptionQuote) -> dict[str, Any]:
     }
 
 
-def _quote_from_record(row: Mapping[str, Any]) -> OptionQuote:
-    contract = OptionContract(
+def _trade_record(trade: OptionTrade) -> dict[str, Any]:
+    return {
+        **_contract_record(trade.contract),
+        "record_type": "trade",
+        "trade_timestamp": trade.trade_timestamp,
+        "trade_price": trade.price,
+        "trade_size": trade.size,
+        "trade_venue": trade.trade_venue,
+        "trade_provider": _metadata_value(trade.metadata, "provider"),
+        "trade_dataset": _metadata_value(trade.metadata, "dataset"),
+        "trade_schema": _metadata_value(trade.metadata, "schema"),
+        "trade_source_record_id": _metadata_value(trade.metadata, "source_record_id"),
+    }
+
+
+def _contract_record(contract: OptionContract) -> dict[str, Any]:
+    return {
+        "underlying_symbol": contract.underlying_symbol,
+        "expiration": contract.expiration,
+        "strike": contract.strike,
+        "option_type": contract.option_type.value,
+        "exercise_style": _enum_value(contract.exercise_style),
+        "contract_multiplier": contract.contract_multiplier,
+        "currency": contract.currency,
+        "source_contract_id": contract.source_contract_id,
+        "display_symbol": contract.display_symbol,
+        "listing_exchange": contract.listing_exchange,
+        "contract_provider": _metadata_value(contract.metadata, "provider"),
+        "contract_dataset": _metadata_value(contract.metadata, "dataset"),
+        "contract_schema": _metadata_value(contract.metadata, "schema"),
+        "contract_source_record_id": _metadata_value(
+            contract.metadata,
+            "source_record_id",
+        ),
+    }
+
+
+def _contract_from_record(row: Mapping[str, Any]) -> OptionContract:
+    return OptionContract(
         underlying_symbol=_required_text(row, "underlying_symbol"),
         expiration=_required_date(row, "expiration"),
         strike=_required_float(row, "strike"),
@@ -370,8 +446,22 @@ def _quote_from_record(row: Mapping[str, Any]) -> OptionQuote:
         listing_exchange=_optional_text(row.get("listing_exchange")),
         metadata=_source_metadata_from_prefix(row, "contract"),
     )
+
+
+def _trade_from_record(row: Mapping[str, Any]) -> OptionTrade:
+    return OptionTrade(
+        contract=_contract_from_record(row),
+        trade_timestamp=_required_datetime(row, "trade_timestamp"),
+        price=_required_float(row, "trade_price"),
+        size=_optional_int(row.get("trade_size")),
+        trade_venue=_optional_text(row.get("trade_venue")),
+        metadata=_source_metadata_from_prefix(row, "trade"),
+    )
+
+
+def _quote_from_record(row: Mapping[str, Any]) -> OptionQuote:
     return OptionQuote(
-        contract=contract,
+        contract=_contract_from_record(row),
         quote_timestamp=_required_datetime(row, "quote_timestamp"),
         bid=_optional_float(row.get("bid")),
         ask=_optional_float(row.get("ask")),
@@ -403,6 +493,7 @@ def _underlying_quote_from_record(row: Mapping[str, Any]) -> UnderlyingQuote | N
         ask=ask,
         bid_venue=_optional_text(row.get("underlying_bid_venue")),
         ask_venue=_optional_text(row.get("underlying_ask_venue")),
+        metadata=_source_metadata_from_prefix(row, "underlying"),
     )
 
 
@@ -500,7 +591,9 @@ def _optional_int(value: Any) -> int | None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("integer fields must be numbers or missing")
-    if not isfinite(float(value)):
+    if isinstance(value, int):
+        return value
+    if not isfinite(value):
         raise ValueError("integer fields must be finite or missing")
     if int(value) != value:
         raise ValueError("integer fields must be integral")
@@ -562,7 +655,7 @@ def _is_missing(value: Any) -> bool:
 
 
 def _validate_dataframe(frame) -> None:
-    pandas = _import_pandas()
+    pandas = require_pandas()
     if not isinstance(frame, pandas.DataFrame):
         raise ValueError("frame must be a pandas DataFrame")
 
@@ -570,13 +663,3 @@ def _validate_dataframe(frame) -> None:
 def _dataframe_to_records(frame) -> tuple[dict[str, Any], ...]:
     normalised = frame.astype(object).where(frame.notna(), None)
     return tuple(normalised.to_dict(orient="records"))
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError(
-            "pandas interoperability requires pandas to be installed",
-        ) from error
-    return pandas

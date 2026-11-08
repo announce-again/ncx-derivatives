@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from math import isfinite
-from typing import Any, Iterable
+from typing import Any
 
 from ncx_derivatives.market_data import OptionType
+from ncx_derivatives.utils._optional import require_pandas
 
 from .smile_metrics import (
     AtmVolatilityResult,
@@ -723,7 +725,7 @@ def delta_volatility_results_to_records(
 
 
 def delta_volatility_results_to_dataframe(results: Iterable[SmileDeltaMetrics]):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         delta_volatility_results_to_records(results),
         columns=DELTA_VOLATILITY_COLUMNS,
@@ -745,7 +747,7 @@ def delta_structure_results_to_records(
 
 
 def delta_structure_results_to_dataframe(results: Iterable[SmileDeltaMetrics]):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         delta_structure_results_to_records(results),
         columns=DELTA_STRUCTURE_COLUMNS,
@@ -763,7 +765,7 @@ def risk_reversal_results_to_records(
 
 
 def risk_reversal_results_to_dataframe(results: Iterable[SmileDeltaMetrics]):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         risk_reversal_results_to_records(results),
         columns=RISK_REVERSAL_COLUMNS,
@@ -781,7 +783,7 @@ def butterfly_results_to_records(
 
 
 def butterfly_results_to_dataframe(results: Iterable[SmileDeltaMetrics]):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         butterfly_results_to_records(results),
         columns=BUTTERFLY_COLUMNS,
@@ -1103,13 +1105,3 @@ def _validate_finite(value: Any, field_name: str) -> None:
 
 def _enum_value(value: Enum | None) -> str | None:
     return None if value is None else value.value
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError(
-            "pandas interoperability requires pandas to be installed",
-        ) from error
-    return pandas

@@ -1,12 +1,13 @@
 """Report validation issues without removing any data."""
 
+import sys
 from datetime import timedelta
 from pathlib import Path
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _common import OptionType, VALUATION_TIMESTAMP, manual_snapshot, quote  # noqa: E402
+from _common import VALUATION_TIMESTAMP, OptionType, manual_snapshot, quote  # noqa: E402
+
 from ncx_derivatives.market_data import (  # noqa: E402
     OptionChainSnapshot,
     validate_option_chain_snapshot,

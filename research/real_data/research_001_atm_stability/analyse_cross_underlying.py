@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from .analyse_spy import stability_summary
 
-
 ETF_SYMBOLS = frozenset({"SPY", "QQQ"})
 
 

@@ -130,4 +130,5 @@ is a development-machine observation rather than a service-level guarantee. See
 Delta-target interpolation, risk reversals, and butterflies are implemented in
 `volatility/delta_metrics.py`. Multi-expiry representation is implemented in
 `volatility/term_structure.py`. Both consume these local results directly.
-Stage 3.3 surface work has not begun.
+See [Stage 3.3 volatility surfaces](volatility_surface.md) for interpolation
+across strikes and maturities.

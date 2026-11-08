@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
+
+from research.real_data.common._optional import require_pandas
 
 
 def build_underlying_return_panel(
@@ -10,7 +12,7 @@ def build_underlying_return_panel(
 ):
     """Build snapshot-aligned unadjusted returns and suppress split crossings."""
 
-    pandas = _import_pandas()
+    pandas = require_pandas()
     required = {"underlying_symbol", "quote_date", "underlying_price"}
     missing = sorted(required.difference(standardized_options.columns))
     if missing:
@@ -34,12 +36,3 @@ def build_underlying_return_panel(
     daily.loc[daily["crosses_split"], "underlying_return"] = float("nan")
     daily["absolute_underlying_return"] = daily["underlying_return"].abs()
     return daily.rename(columns={"underlying_symbol": "underlying"})
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError("Research 001 requires pandas") from error
-    return pandas
-

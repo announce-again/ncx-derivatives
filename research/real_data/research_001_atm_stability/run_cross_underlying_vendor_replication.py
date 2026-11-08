@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
@@ -17,14 +17,24 @@ from research.real_data.common.deterministic_io import (
     write_output_hashes,
     write_parquet,
 )
-from research.real_data.common.kaggle_manifest import build_dataset_manifest, write_dataset_manifest
+from research.real_data.common.kaggle_manifest import (
+    build_dataset_manifest,
+    write_dataset_manifest,
+)
 from research.real_data.common.regression import fit_clustered_ols
 from research.real_data.common.returns import build_underlying_return_panel
 
-from .analyse_cross_underlying import add_underlying_class, cross_underlying_summary, etf_stock_summary
-from .build_tenor_panel import add_daily_stability, adjacent_expiry_gaps, build_nearest_tenor_panel
+from .analyse_cross_underlying import (
+    add_underlying_class,
+    cross_underlying_summary,
+    etf_stock_summary,
+)
+from .build_tenor_panel import (
+    add_daily_stability,
+    adjacent_expiry_gaps,
+    build_nearest_tenor_panel,
+)
 from .config import Research001Config
-
 
 TARGET_TENORS = (21, 45, 90, 150)
 TENOR_TOLERANCES = (7, 10, 15, 25)

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from hashlib import sha256
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from ncx_derivatives.market_data import OptionType
+from ncx_derivatives.utils._files import csv_cell, file_sha256
+from ncx_derivatives.utils._optional import require_pandas
 
 from .delta_metrics import (
     BUTTERFLY_COLUMNS,
@@ -16,8 +18,8 @@ from .delta_metrics import (
     RISK_REVERSAL_COLUMNS,
     DeltaMetricConfig,
     SmileDeltaMetrics,
-    calculate_smile_delta_metrics_for_smiles,
     butterfly_results_to_records,
+    calculate_smile_delta_metrics_for_smiles,
     delta_structure_results_to_records,
     delta_volatility_results_to_records,
     risk_reversal_results_to_records,
@@ -328,7 +330,7 @@ def smile_analysis_summary_to_records(
 
 
 def smile_analysis_summary_to_dataframe(result: SmileAnalysisResult):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         smile_analysis_summary_to_records(result),
         columns=SMILE_ANALYSIS_SUMMARY_COLUMNS,
@@ -421,31 +423,13 @@ def _write_records(
         writer = csv.DictWriter(file, fieldnames=columns, lineterminator="\n")
         writer.writeheader()
         writer.writerows(
-            {column: _csv_value(record[column]) for column in columns}
+            {column: csv_cell(record[column]) for column in columns}
             for record in records
         )
-    payload = path.read_bytes()
     return SmileAnalysisCsvExport(
         name=name,
         path=path,
         row_count=len(records),
-        byte_count=len(payload),
-        sha256=sha256(payload).hexdigest(),
+        byte_count=path.stat().st_size,
+        sha256=file_sha256(path),
     )
-
-
-def _csv_value(value: Any) -> Any:
-    if value is None:
-        return ""
-    isoformat = getattr(value, "isoformat", None)
-    return isoformat() if callable(isoformat) else value
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError(
-            "pandas interoperability requires pandas to be installed",
-        ) from error
-    return pandas

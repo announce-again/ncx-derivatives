@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, datetime, timezone, tzinfo
 from math import isfinite
-from typing import Iterable
 
-from .models import ExerciseStyle, OptionType, SourceMetadata
-
+from .models import ExerciseStyle, OptionType
 
 DEFAULT_MISSING_VALUES = frozenset({"", "NA", "N/A", "NULL", "NONE", "NAN"})
 
@@ -154,7 +153,15 @@ def normalise_datetime_utc(
             ) from error
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         _validate_tzinfo(assume_timezone)
-        parsed = parsed.replace(tzinfo=assume_timezone)
+        wall_time = parsed.replace(tzinfo=None)
+        first = wall_time.replace(tzinfo=assume_timezone, fold=0)
+        second = wall_time.replace(tzinfo=assume_timezone, fold=1)
+        if first.utcoffset() != second.utcoffset():
+            utc = first.astimezone(timezone.utc)
+            if utc.astimezone(assume_timezone).replace(tzinfo=None) != wall_time:
+                raise ValueError("nonexistent local datetime; supply an explicit UTC offset")
+            raise ValueError("ambiguous local datetime; supply an explicit UTC offset")
+        parsed = first
     return parsed.astimezone(timezone.utc)
 
 

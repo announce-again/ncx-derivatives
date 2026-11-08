@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
 from math import inf, isclose, isfinite, log
 from numbers import Real
-from typing import Any, Iterable
+from typing import Any
 
 from ncx_derivatives.greeks import call_delta, put_delta
 from ncx_derivatives.market_data import OptionType
+from ncx_derivatives.utils._optional import require_pandas
 
 from .chains import (
     ImpliedVolatilityChain,
     ImpliedVolatilityDiagnosticFlag,
-    ImpliedVolatilityFailureReason,
     ImpliedVolatilityQuote,
     ImpliedVolatilityResult,
     ImpliedVolatilityStatus,
@@ -609,7 +610,7 @@ def volatility_smiles_to_records(
 
 
 def volatility_smiles_to_dataframe(smiles: Iterable[VolatilitySmile]):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         volatility_smiles_to_records(smiles),
         columns=SMILE_POINT_COLUMNS,
@@ -639,7 +640,7 @@ def smile_selection_diagnostics_to_records(
 def smile_selection_diagnostics_to_dataframe(
     diagnostics: Iterable[SmileSelectionDiagnostic],
 ):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         smile_selection_diagnostics_to_records(diagnostics),
         columns=SMILE_SELECTION_DIAGNOSTIC_COLUMNS,
@@ -669,7 +670,7 @@ def smile_group_diagnostics_to_records(
 def smile_group_diagnostics_to_dataframe(
     diagnostics: Iterable[SmileGroupDiagnostic],
 ):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         smile_group_diagnostics_to_records(diagnostics),
         columns=SMILE_GROUP_DIAGNOSTIC_COLUMNS,
@@ -1240,13 +1241,3 @@ def _validate_optional_non_negative_int(
         isinstance(value, bool) or not isinstance(value, int) or value < 0
     ):
         raise ValueError(f"{field_name} must be a non-negative integer or None")
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError(
-            "pandas interoperability requires pandas to be installed",
-        ) from error
-    return pandas

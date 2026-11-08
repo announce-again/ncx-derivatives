@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping
 
 from research.real_data.common.deterministic_io import write_json, write_output_hashes
-
 
 LIMITATIONS = (
     "Kaggle is a distribution channel, not the originating exchange.",

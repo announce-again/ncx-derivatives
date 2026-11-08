@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from math import exp, inf, isinf, nan
 
@@ -24,7 +25,6 @@ from ncx_derivatives.volatility import (
     implied_volatility_chain_to_dataframe,
     implied_volatility_chain_to_records,
 )
-
 
 UTC = timezone.utc
 AS_OF = datetime(2026, 7, 30, 14, 30, tzinfo=UTC)
@@ -370,6 +370,26 @@ def test_lower_and_upper_bounds_have_explicit_results() -> None:
     assert ImpliedVolatilityDiagnosticFlag.UPPER_BOUND_IV in (
         iv_quote.ask.diagnostic_flags
     )
+
+
+@pytest.mark.parametrize("exercise_style", [ExerciseStyle.AMERICAN, None])
+@pytest.mark.parametrize(
+    ("option_type", "upper_bound"),
+    [(OptionType.CALL, 100.0), (OptionType.PUT, 100.0 * exp(-0.05))],
+)
+def test_bsm_upper_bound_is_independent_of_contract_exercise_style(
+    exercise_style, option_type, upper_bound
+) -> None:
+    quote = _quote(option_type, 100.0, upper_bound, upper_bound)
+    quote = replace(quote, contract=replace(quote.contract, exercise_style=exercise_style))
+    (enriched,) = _enriched_quotes(quote)
+    assert enriched.no_arbitrage_bounds is None
+
+    result = build_implied_volatility_chain([enriched]).quotes[0].ask
+
+    assert result.status is ImpliedVolatilityStatus.SUCCESS
+    assert result.implied_volatility == inf
+    assert result.diagnostic_flags == (ImpliedVolatilityDiagnosticFlag.UPPER_BOUND_IV,)
 
 
 @pytest.mark.parametrize(

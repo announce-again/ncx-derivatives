@@ -351,73 +351,8 @@ def _cleaning_diagnostics_for_quote(
     snapshot: OptionChainSnapshot | None,
     enriched_quote: EnrichedOptionQuote | None,
 ) -> tuple[CleaningDiagnostic, ...]:
-    diagnostics: list[CleaningDiagnostic] = []
-
-    if quote.bid is None and quote.ask is None:
-        diagnostics.append(
-            _diagnostic(
-                RejectionReason.EMPTY_MARKET,
-                "quote has neither bid nor ask",
-                location,
-            ),
-        )
-    else:
-        if config.reject_missing_bid and quote.bid is None:
-            diagnostics.append(
-                _diagnostic(RejectionReason.MISSING_BID, "quote is missing bid", location),
-            )
-        if config.reject_missing_ask and quote.ask is None:
-            diagnostics.append(
-                _diagnostic(RejectionReason.MISSING_ASK, "quote is missing ask", location),
-            )
-
-    if quote.bid is not None and quote.ask is not None:
-        if config.reject_crossed_market and quote.bid > quote.ask:
-            diagnostics.append(
-                _diagnostic(
-                    RejectionReason.CROSSED_MARKET,
-                    "quote bid is greater than ask",
-                    location,
-                    context=(("bid", str(quote.bid)), ("ask", str(quote.ask))),
-                ),
-            )
-        elif config.reject_locked_market and quote.bid == quote.ask:
-            diagnostics.append(
-                _diagnostic(
-                    RejectionReason.LOCKED_MARKET,
-                    "quote bid equals ask",
-                    location,
-                    context=(("bid", str(quote.bid)), ("ask", str(quote.ask))),
-                ),
-            )
-
     midpoint = _quote_midpoint(quote)
-    if config.reject_zero_midpoint and midpoint == 0.0:
-        diagnostics.append(
-            _diagnostic(
-                RejectionReason.ZERO_MIDPOINT,
-                "quote midpoint is zero",
-                location,
-            ),
-        )
-
-    if (
-        config.max_relative_spread is not None
-        and _relative_spread(quote, enriched_quote) is not None
-        and _relative_spread(quote, enriched_quote) > config.max_relative_spread
-    ):
-        spread = _relative_spread(quote, enriched_quote)
-        diagnostics.append(
-            _diagnostic(
-                RejectionReason.EXCESSIVE_SPREAD,
-                "quote relative spread exceeds maximum",
-                location,
-                context=(
-                    ("relative_spread", str(spread)),
-                    ("max_relative_spread", str(config.max_relative_spread)),
-                ),
-            ),
-        )
+    diagnostics = _market_diagnostics(quote, config, location, midpoint, enriched_quote)
 
     if (
         config.min_volume is not None
@@ -491,7 +426,7 @@ def _cleaning_diagnostics_for_quote(
             ),
         )
 
-    option_price = _option_price(quote, enriched_quote)
+    option_price = enriched_quote.midpoint if enriched_quote is not None else midpoint
     if (
         config.min_option_price is not None
         and (option_price is None or option_price < config.min_option_price)
@@ -509,67 +444,150 @@ def _cleaning_diagnostics_for_quote(
         )
 
     if enriched_quote is not None:
-        if _outside_range(
-            enriched_quote.time_to_maturity,
-            config.min_maturity,
-            config.max_maturity,
-        ):
-            diagnostics.append(
-                _diagnostic(
-                    RejectionReason.MATURITY_OUT_OF_RANGE,
-                    "quote maturity is outside configured range",
-                    location,
-                    context=(
-                        ("time_to_maturity", str(enriched_quote.time_to_maturity)),
-                        ("min_maturity", _optional_str(config.min_maturity)),
-                        ("max_maturity", _optional_str(config.max_maturity)),
-                    ),
-                ),
-            )
-
-        if _outside_range(
-            enriched_quote.spot_moneyness,
-            config.min_spot_moneyness,
-            config.max_spot_moneyness,
-        ):
-            diagnostics.append(
-                _diagnostic(
-                    RejectionReason.SPOT_MONEYNESS_OUT_OF_RANGE,
-                    "quote spot moneyness is outside configured range",
-                    location,
-                    context=(
-                        ("spot_moneyness", str(enriched_quote.spot_moneyness)),
-                        ("min_spot_moneyness", _optional_str(config.min_spot_moneyness)),
-                        ("max_spot_moneyness", _optional_str(config.max_spot_moneyness)),
-                    ),
-                ),
-            )
-
-        if _outside_range(
-            enriched_quote.forward_moneyness,
-            config.min_forward_moneyness,
-            config.max_forward_moneyness,
-        ):
-            diagnostics.append(
-                _diagnostic(
-                    RejectionReason.FORWARD_MONEYNESS_OUT_OF_RANGE,
-                    "quote forward moneyness is outside configured range",
-                    location,
-                    context=(
-                        ("forward_moneyness", str(enriched_quote.forward_moneyness)),
-                        (
-                            "min_forward_moneyness",
-                            _optional_str(config.min_forward_moneyness),
-                        ),
-                        (
-                            "max_forward_moneyness",
-                            _optional_str(config.max_forward_moneyness),
-                        ),
-                    ),
-                ),
-            )
-
+        diagnostics.extend(_enriched_diagnostics(enriched_quote, config, location))
     return tuple(diagnostics)
+
+
+def _market_diagnostics(
+    quote: OptionQuote,
+    config: CleaningConfig,
+    location: tuple[str, ...],
+    midpoint: float | None,
+    enriched_quote: EnrichedOptionQuote | None,
+) -> list[CleaningDiagnostic]:
+    diagnostics: list[CleaningDiagnostic] = []
+
+    if quote.bid is None and quote.ask is None:
+        diagnostics.append(
+            _diagnostic(
+                RejectionReason.EMPTY_MARKET,
+                "quote has neither bid nor ask",
+                location,
+            ),
+        )
+    else:
+        if config.reject_missing_bid and quote.bid is None:
+            diagnostics.append(
+                _diagnostic(RejectionReason.MISSING_BID, "quote is missing bid", location),
+            )
+        if config.reject_missing_ask and quote.ask is None:
+            diagnostics.append(
+                _diagnostic(RejectionReason.MISSING_ASK, "quote is missing ask", location),
+            )
+
+    if quote.bid is not None and quote.ask is not None:
+        if config.reject_crossed_market and quote.bid > quote.ask:
+            diagnostics.append(
+                _diagnostic(
+                    RejectionReason.CROSSED_MARKET,
+                    "quote bid is greater than ask",
+                    location,
+                    context=(("bid", str(quote.bid)), ("ask", str(quote.ask))),
+                ),
+            )
+        elif config.reject_locked_market and quote.bid == quote.ask:
+            diagnostics.append(
+                _diagnostic(
+                    RejectionReason.LOCKED_MARKET,
+                    "quote bid equals ask",
+                    location,
+                    context=(("bid", str(quote.bid)), ("ask", str(quote.ask))),
+                ),
+            )
+
+    if config.reject_zero_midpoint and midpoint == 0.0:
+        diagnostics.append(
+            _diagnostic(
+                RejectionReason.ZERO_MIDPOINT,
+                "quote midpoint is zero",
+                location,
+            ),
+        )
+
+    max_spread = config.max_relative_spread
+    spread = _relative_spread(quote, enriched_quote, midpoint) if max_spread is not None else None
+    if spread is not None and max_spread is not None and spread > max_spread:
+        diagnostics.append(
+            _diagnostic(
+                RejectionReason.EXCESSIVE_SPREAD,
+                "quote relative spread exceeds maximum",
+                location,
+                context=(
+                    ("relative_spread", str(spread)),
+                    ("max_relative_spread", str(max_spread)),
+                ),
+            ),
+        )
+
+    return diagnostics
+
+
+def _enriched_diagnostics(
+    enriched_quote: EnrichedOptionQuote,
+    config: CleaningConfig,
+    location: tuple[str, ...],
+) -> list[CleaningDiagnostic]:
+    diagnostics: list[CleaningDiagnostic] = []
+    if _outside_range(
+        enriched_quote.time_to_maturity,
+        config.min_maturity,
+        config.max_maturity,
+    ):
+        diagnostics.append(
+            _diagnostic(
+                RejectionReason.MATURITY_OUT_OF_RANGE,
+                "quote maturity is outside configured range",
+                location,
+                context=(
+                    ("time_to_maturity", str(enriched_quote.time_to_maturity)),
+                    ("min_maturity", _optional_str(config.min_maturity)),
+                    ("max_maturity", _optional_str(config.max_maturity)),
+                ),
+            ),
+        )
+
+    if _outside_range(
+        enriched_quote.spot_moneyness,
+        config.min_spot_moneyness,
+        config.max_spot_moneyness,
+    ):
+        diagnostics.append(
+            _diagnostic(
+                RejectionReason.SPOT_MONEYNESS_OUT_OF_RANGE,
+                "quote spot moneyness is outside configured range",
+                location,
+                context=(
+                    ("spot_moneyness", str(enriched_quote.spot_moneyness)),
+                    ("min_spot_moneyness", _optional_str(config.min_spot_moneyness)),
+                    ("max_spot_moneyness", _optional_str(config.max_spot_moneyness)),
+                ),
+            ),
+        )
+
+    if _outside_range(
+        enriched_quote.forward_moneyness,
+        config.min_forward_moneyness,
+        config.max_forward_moneyness,
+    ):
+        diagnostics.append(
+            _diagnostic(
+                RejectionReason.FORWARD_MONEYNESS_OUT_OF_RANGE,
+                "quote forward moneyness is outside configured range",
+                location,
+                context=(
+                    ("forward_moneyness", str(enriched_quote.forward_moneyness)),
+                    (
+                        "min_forward_moneyness",
+                        _optional_str(config.min_forward_moneyness),
+                    ),
+                    (
+                        "max_forward_moneyness",
+                        _optional_str(config.max_forward_moneyness),
+                    ),
+                ),
+            ),
+        )
+    return diagnostics
 
 
 def _diagnostic(
@@ -608,25 +626,15 @@ def _quote_midpoint(quote: OptionQuote) -> float | None:
 def _relative_spread(
     quote: OptionQuote,
     enriched_quote: EnrichedOptionQuote | None,
+    midpoint: float | None,
 ) -> float | None:
     if enriched_quote is not None:
         return enriched_quote.relative_spread
-    midpoint = _quote_midpoint(quote)
     if midpoint is None or midpoint <= 0.0:
         return None
     if quote.bid is None or quote.ask is None:
         return None
     return (quote.ask - quote.bid) / midpoint
-
-
-def _option_price(
-    quote: OptionQuote,
-    enriched_quote: EnrichedOptionQuote | None,
-) -> float | None:
-    if enriched_quote is not None:
-        return enriched_quote.midpoint
-    return _quote_midpoint(quote)
-
 
 def _outside_range(
     value: float,

@@ -2,7 +2,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-
 DifferenceMethod = Literal["central", "forward", "backward"]
 BumpParameter = Literal[
     "spot",

@@ -1,11 +1,17 @@
-from datetime import date
 import math
+from datetime import date, timedelta
+from time import perf_counter
 
 import pandas as pd
 import pytest
 
-from ncx_derivatives.volatility import SmileIvSource
+from ncx_derivatives.pricing import call_price, put_price
 from research.real_data.common.dataset_audit import audit_standardized_options
+from research.real_data.common.deterministic_io import (
+    write_json,
+    write_output_hashes,
+    write_parquet,
+)
 from research.real_data.common.optionsdx_adapter import (
     optionsdx_stage2_csv_config,
     standardize_optionsdx_wide,
@@ -54,6 +60,111 @@ def _wide_rows():
             },
         ]
     )
+
+
+def test_failed_parquet_write_preserves_previous_checkpoint(tmp_path, monkeypatch) -> None:
+    checkpoint = tmp_path / "expiry.parquet"
+    checkpoint.write_bytes(b"previous checkpoint")
+
+    def fail_after_writing(self, path, **kwargs):
+        path.write_bytes(b"incomplete parquet")
+        raise OSError("interrupted")
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", fail_after_writing)
+    with pytest.raises(OSError, match="interrupted"):
+        write_parquet(checkpoint, pd.DataFrame({"date": ["2022-01-03"]}), sort_by=("date",))
+
+    assert checkpoint.read_bytes() == b"previous checkpoint"
+    assert list(tmp_path.iterdir()) == [checkpoint]
+
+
+def test_output_hashes_exclude_interrupted_temporary_writes(tmp_path) -> None:
+    published = write_json(tmp_path / "exclusion.json", {"reason": "NO_TWO_SIDED_QUOTES"})
+    (tmp_path / ".ncx-write-interrupted.tmp").write_bytes(b"incomplete")
+
+    manifest = write_output_hashes(tmp_path, tmp_path / "output_hashes.json")
+
+    assert published.read_bytes() == b'{"reason":"NO_TWO_SIDED_QUOTES"}\n'
+    assert b'"path":"exclusion.json"' in manifest.read_bytes()
+    assert b"interrupted" not in manifest.read_bytes()
+
+
+def test_full_history_workers_resume_successful_and_excluded_dates(tmp_path) -> None:
+    duckdb = pytest.importorskip("duckdb")
+    pytest.importorskip("pyarrow")
+    from research.real_data.research_001_atm_stability.run_spy_full_ncx import (
+        _CheckpointPaths,
+        _load_run_scope,
+        _run_daily_batches,
+    )
+
+    first_date = date(2022, 1, 3)
+    excluded_date = first_date + timedelta(days=1)
+    expiry = first_date + timedelta(days=45)
+    records = []
+    for strike in range(90, 111, 2):
+        call = call_price(100, strike, 45 / 365, 0.01, 0.20)
+        put = put_price(100, strike, 45 / 365, 0.01, 0.20)
+        records.append({
+            "quote_date": first_date,
+            "expire_date": expiry,
+            "dte": 45,
+            "underlying_last": 100.0,
+            "strike": strike,
+            "c_bid": call - 0.01,
+            "c_ask": call + 0.01,
+            "p_bid": put - 0.01,
+            "p_ask": put + 0.01,
+        })
+    records.append({
+        **records[0],
+        "quote_date": excluded_date,
+        "dte": 44,
+        "c_bid": None,
+        "p_ask": None,
+    })
+    raw = pd.DataFrame.from_records(records)
+    database = tmp_path / "options.duckdb"
+    with duckdb.connect(str(database)) as connection:
+        connection.register("quotes", raw)
+        connection.execute("CREATE TABLE raw_wide AS SELECT * FROM quotes")
+
+    rates = pd.DataFrame({"date": [first_date], "DGS1MO": [1.0], "DGS3MO": [1.0]})
+    distributions = pd.DataFrame({"ex_date": [date(2021, 12, 31)], "cash_dividend": [0.0]})
+    specification = "treasury_trailing_dividend_yield"
+    dates, raw_count, scoped_count = _load_run_scope(database, rates, specification, 0.4, None)
+    assert dates == [first_date, excluded_date]
+    assert raw_count == scoped_count == len(records)
+
+    paths = _CheckpointPaths.create(tmp_path / "interim", specification)
+    output_dir = tmp_path / "output"
+
+    def run() -> None:
+        _run_daily_batches(
+            dates,
+            database=database,
+            rates=rates,
+            distributions=distributions,
+            specification=specification,
+            paths=paths,
+            max_moneyness=0.4,
+            workers=2,
+            output_dir=output_dir,
+            started=perf_counter(),
+        )
+
+    run()
+    partition = paths.expiry / f"expiry_{first_date}.parquet"
+    exclusion = paths.exclusions / f"exclusion_{excluded_date}.json"
+    assert len(pd.read_parquet(partition)) == 1
+    assert b"NO_TWO_SIDED_QUOTES" in exclusion.read_bytes()
+    checkpoints = [partition, exclusion, *paths.attrition.glob("*.parquet")]
+    assert len(checkpoints) == 4
+    first_modified = [path.stat().st_mtime_ns for path in checkpoints]
+
+    run()
+    assert [path.stat().st_mtime_ns for path in checkpoints] == first_modified
+    assert (output_dir / "batch_failures.csv").read_text() == "quote_date,error_type,error\n"
 
 
 def test_optionsdx_adapter_expands_both_sides_and_is_order_invariant() -> None:

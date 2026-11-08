@@ -24,7 +24,6 @@ from ncx_derivatives.market_data import (
     enrich_option_quote,
 )
 
-
 UTC = timezone.utc
 AS_OF = datetime(2026, 1, 2, 15, 0, tzinfo=UTC)
 VALUATION_DATE = date(2026, 1, 2)

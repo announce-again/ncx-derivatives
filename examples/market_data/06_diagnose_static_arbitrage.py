@@ -1,11 +1,12 @@
 """Detect static-arbitrage issues without repairing prices."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _common import OptionType, VALUATION_DATE, carry_assumptions, quote  # noqa: E402
+from _common import VALUATION_DATE, OptionType, carry_assumptions, quote  # noqa: E402
+
 from ncx_derivatives.market_data import (  # noqa: E402
     diagnose_static_arbitrage,
     enrich_option_quote,

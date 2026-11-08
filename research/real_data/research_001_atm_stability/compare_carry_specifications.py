@@ -13,7 +13,6 @@ from research.real_data.common.deterministic_io import (
     write_output_hashes,
 )
 
-
 SPECIFICATIONS = (
     "vendor_iv_replication",
     "ncx_treasury_projected_dividends",

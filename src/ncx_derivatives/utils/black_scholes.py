@@ -1,9 +1,11 @@
-from math import erf, exp, log, pi, sqrt
+from math import erf, erfc, exp, log, pi, sqrt
 
 
 def norm_cdf(value: float) -> float:
     """Standard normal cumulative distribution function."""
 
+    if value < -5.0:
+        return 0.5 * erfc(-value / sqrt(2.0))
     return 0.5 * (1.0 + erf(value / sqrt(2.0)))
 
 

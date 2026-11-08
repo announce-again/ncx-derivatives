@@ -25,6 +25,11 @@ deterministic synthetic CSV
 The stage counts are summaries over those objects, not replacements for their
 diagnostics.
 
+The chain reports Black–Scholes–Merton implied volatility for every exercise
+style. Price inversion and the `UPPER_BOUND_IV` flag use the same BSM model
+bounds. For American, Bermudan, or unspecified exercise styles, the result is
+the volatility implied by a European pricing model.
+
 ## Synthetic Dataset
 
 The default dataset contains 50,000 rows across 10 underlyings, 10 snapshots per

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from math import isfinite, sqrt
-from typing import Any, Iterable
+from typing import Any
+
+from ncx_derivatives.utils._optional import require_pandas
 
 from .smiles import VolatilitySmile, VolatilitySmilePoint
 
@@ -276,7 +279,7 @@ def smile_metrics_to_records(
 
 
 def smile_metrics_to_dataframe(results: Iterable[SmileMetricResult]):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         smile_metrics_to_records(results),
         columns=SMILE_METRIC_COLUMNS,
@@ -872,13 +875,3 @@ def _validate_optional_positive_finite(
     _validate_non_negative_finite(value, field_name)
     if value <= 0.0:
         raise ValueError(f"{field_name} must be positive or None")
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError(
-            "pandas interoperability requires pandas to be installed",
-        ) from error
-    return pandas

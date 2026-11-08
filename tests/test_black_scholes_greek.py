@@ -1,5 +1,4 @@
 import pytest
-from ncx_derivatives.pricing import call_price, put_price
 
 from ncx_derivatives.greeks import (
     call_delta,
@@ -11,7 +10,7 @@ from ncx_derivatives.greeks import (
     put_theta,
     vega,
 )
-
+from ncx_derivatives.pricing import call_price, put_price
 
 SPOT = 100.0
 STRIKE = 100.0

@@ -1,4 +1,10 @@
-# Smile-metric robustness research
+# Research workflows
+
+- [Research 001 — ATM volatility stability](real_data/research_001_atm_stability/README.md) covers historical SPY and cross-underlying comparisons.
+- [Stage 3.6 — SPY volatility dynamics](real_data/volatility_dynamics.md) covers horizon-matched realized variance, smile dynamics, regimes, and FOMC event windows.
+- Smile-metric robustness uses synthetic quotes to measure errors against a known smile.
+
+## Smile-metric robustness
 
 `smile_metric_robustness.py` is a standalone, deterministic research harness.
 It does not alter or duplicate the production metric implementations. Every

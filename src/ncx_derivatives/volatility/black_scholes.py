@@ -1,9 +1,8 @@
 from collections.abc import Callable
-from math import exp, inf, isclose, pi, sqrt
+from math import exp, inf, isclose, isfinite, pi, sqrt
 
 from ncx_derivatives.greeks import vega
 from ncx_derivatives.pricing import call_price, put_price
-
 
 PriceFunction = Callable[[float, float, float, float, float, float], float]
 
@@ -32,7 +31,11 @@ def _validate_inputs(
     spot: float,
     strike: float,
     maturity: float,
+    rate: float,
+    dividend_yield: float,
 ) -> None:
+    if not all(isfinite(value) for value in (option_price, spot, strike, maturity, rate, dividend_yield)):
+        raise ImpliedVolatilityInputError("price and market inputs must be finite")
     if option_price < 0.0:
         raise ImpliedVolatilityInputError("option price must be non-negative")
     if spot <= 0.0:
@@ -137,7 +140,12 @@ def _implied_volatility(
     max_volatility: float = 10.0,
     use_newton: bool = True,
 ) -> float:
-    _validate_inputs(option_price, spot, strike, maturity)
+    _validate_inputs(option_price, spot, strike, maturity, rate, dividend_yield)
+    for value in (price_tolerance, volatility_tolerance, max_volatility):
+        if isinstance(value, bool) or not isfinite(value) or value <= 0.0:
+            raise ImpliedVolatilityInputError("solver tolerances and max volatility must be finite and positive")
+    if isinstance(max_iterations, bool) or not isinstance(max_iterations, int) or max_iterations < 1:
+        raise ImpliedVolatilityInputError("max_iterations must be a positive integer")
 
     lower_bound, upper_bound = _no_arbitrage_bounds(
         option_type,
@@ -252,7 +260,7 @@ def _implied_volatility(
 
         sigma = next_sigma
 
-    return 0.5 * (low + high)
+    raise ImpliedVolatilityConvergenceError("implied volatility solver exhausted max_iterations")
 
 
 def call_implied_volatility(
@@ -262,6 +270,11 @@ def call_implied_volatility(
     maturity: float,
     rate: float,
     dividend_yield: float = 0.0,
+    *,
+    price_tolerance: float = IMPLIED_VOLATILITY_PRICE_ABSOLUTE_TOLERANCE,
+    volatility_tolerance: float = 1e-10,
+    max_iterations: int = 100,
+    max_volatility: float = 10.0,
 ) -> float:
     """Return Black-Scholes-Merton implied volatility for a European call."""
 
@@ -274,6 +287,10 @@ def call_implied_volatility(
         dividend_yield,
         call_price,
         "call",
+        price_tolerance=price_tolerance,
+        volatility_tolerance=volatility_tolerance,
+        max_iterations=max_iterations,
+        max_volatility=max_volatility,
     )
 
 
@@ -284,6 +301,11 @@ def put_implied_volatility(
     maturity: float,
     rate: float,
     dividend_yield: float = 0.0,
+    *,
+    price_tolerance: float = IMPLIED_VOLATILITY_PRICE_ABSOLUTE_TOLERANCE,
+    volatility_tolerance: float = 1e-10,
+    max_iterations: int = 100,
+    max_volatility: float = 10.0,
 ) -> float:
     """Return Black-Scholes-Merton implied volatility for a European put."""
 
@@ -296,4 +318,8 @@ def put_implied_volatility(
         dividend_yield,
         put_price,
         "put",
+        price_tolerance=price_tolerance,
+        volatility_tolerance=volatility_tolerance,
+        max_iterations=max_iterations,
+        max_volatility=max_volatility,
     )

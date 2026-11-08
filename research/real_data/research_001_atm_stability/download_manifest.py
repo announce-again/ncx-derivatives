@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 import json
+from datetime import datetime
 from pathlib import Path
 
-from research.real_data.common.kaggle_manifest import build_dataset_manifest, write_dataset_manifest
+from research.real_data.common.kaggle_manifest import (
+    build_dataset_manifest,
+    write_dataset_manifest,
+)
 
 
 def main() -> None:

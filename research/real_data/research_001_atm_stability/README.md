@@ -107,10 +107,13 @@ Build carry inputs with `build_historical_carry`, then run
   --workers 4
 ```
 
-Daily expiry partitions are checkpoints. A rerun reuses completed dates and
-records dates with no two-sided quotes in `daily_exclusions.csv`; it never
-silently drops them. Use `treasury_trailing_dividend_yield` with separate
-interim/output directories for the formal alternative.
+Daily expiry partitions are checkpoints. A rerun with the same inputs and
+settings reuses completed dates and records dates with no two-sided quotes in
+`daily_exclusions.csv`. Checkpoints are selected by date and specification, so
+choose fresh interim and output directories when the source data, carry
+inputs, or moneyness filter changes. Use separate directories for the formal
+`treasury_trailing_dividend_yield` alternative. New files under `data/interim`
+are ignored by Git.
 
 Run `compare_carry_specifications` after vendor, baseline, and alternative
 panels exist. It uses a common underlying-date-tenor sample and requires the

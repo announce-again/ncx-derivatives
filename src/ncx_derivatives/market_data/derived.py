@@ -111,8 +111,12 @@ def year_fraction(
         raise ValueError("start and end must both be dates or both be datetimes")
 
     if isinstance(start, datetime) and isinstance(end, datetime):
-        _validate_compatible_datetimes(start, end)
-        seconds = (end - start).total_seconds()
+        start_offset = start.utcoffset()
+        end_offset = end.utcoffset()
+        assert start_offset is not None and end_offset is not None
+        # Subtraction with a shared tzinfo uses wall time across DST changes.
+        elapsed = end.replace(tzinfo=None) - start.replace(tzinfo=None)
+        seconds = (elapsed - (end_offset - start_offset)).total_seconds()
         if seconds < 0.0:
             raise ValueError("end must be greater than or equal to start")
         days = seconds / 86_400.0
@@ -322,11 +326,6 @@ def _validate_date_or_datetime(value: date | datetime, field_name: str) -> None:
 def _validate_date(value: date, field_name: str) -> None:
     if not isinstance(value, date) or isinstance(value, datetime):
         raise ValueError(f"{field_name} must be a date")
-
-
-def _validate_compatible_datetimes(start: datetime, end: datetime) -> None:
-    _validate_aware_datetime(start, "start")
-    _validate_aware_datetime(end, "end")
 
 
 def _validate_aware_datetime(value: datetime, field_name: str) -> None:

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Iterable
-
 
 def fit_hac_ols(frame, *, formula: str, max_lags: int = 5):
     statsmodels_formula = _import_statsmodels_formula()

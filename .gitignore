@@ -5,7 +5,9 @@ __pycache__/
 *.pyd
 .Python
 .pytest_cache/
+.ruff_cache/
 .tmp/
+.ncx-write-*.tmp
 .venv/
 venv/
 env/
@@ -19,15 +21,13 @@ dist/
 .ipynb_checkpoints/
 
 # Data and reports generated locally
-data/raw/
-data/processed/
-reports/generated/
+/data/raw/
+/data/interim/
+/data/processed/
+/reports/generated/
 
 # OS / editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-data/interim/**/*.duckdb
-data/interim/research_001/*/stage2_inputs/*/stage2_input_*.csv

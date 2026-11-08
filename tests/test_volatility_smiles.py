@@ -23,8 +23,8 @@ from ncx_derivatives.volatility import (
     DuplicateStrikePolicy,
     ImpliedVolatilityChain,
     ImpliedVolatilityFailureReason,
-    SmileGroupDiagnosticReason,
     SmileGroupDiagnostic,
+    SmileGroupDiagnosticReason,
     SmileIvSource,
     SmilePointDiagnosticFlag,
     SmileSelectionConfig,
@@ -46,7 +46,6 @@ from ncx_derivatives.volatility import (
     volatility_smiles_to_records,
     write_synthetic_option_quote_csv,
 )
-
 
 UTC = timezone.utc
 AS_OF = datetime(2026, 7, 30, 14, 30, tzinfo=UTC)

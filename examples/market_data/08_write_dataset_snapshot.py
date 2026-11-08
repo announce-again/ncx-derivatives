@@ -1,8 +1,8 @@
 """Write a reproducible market-data dataset snapshot."""
 
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -14,6 +14,7 @@ from _common import (  # noqa: E402
     sample_csv_path,
     sample_snapshot,
 )
+
 from ncx_derivatives.market_data import (  # noqa: E402
     clean_enriched_option_quotes,
     diagnose_static_arbitrage,
@@ -21,7 +22,6 @@ from ncx_derivatives.market_data import (  # noqa: E402
     validate_option_chain_snapshot,
     write_market_data_dataset,
 )
-
 
 INGESTED_AT = datetime(2026, 7, 30, 14, 31, tzinfo=timezone.utc)
 

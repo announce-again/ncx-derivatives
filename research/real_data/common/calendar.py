@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
+
+from research.real_data.common._optional import require_pandas
 
 
 def add_previous_observation_date(
@@ -12,7 +14,7 @@ def add_previous_observation_date(
 ):
     """Mark adjacent observations without pretending to be an exchange calendar."""
 
-    pandas = _import_pandas()
+    pandas = require_pandas()
     data = frame.copy()
     data[date_column] = pandas.to_datetime(data[date_column], errors="coerce")
     order = [*group_columns, date_column]
@@ -31,19 +33,10 @@ def add_previous_observation_date(
 def missing_business_date_ranges(dates: Iterable[object]):
     """Return weekday gaps; this is a diagnostic, not an exchange calendar."""
 
-    pandas = _import_pandas()
+    pandas = require_pandas()
     observed = pandas.DatetimeIndex(pandas.to_datetime(list(dates))).normalize().unique().sort_values()
     if len(observed) < 2:
         return ()
     expected = pandas.bdate_range(observed.min(), observed.max())
     missing = expected.difference(observed)
     return tuple(value.date() for value in missing)
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError("Research 001 requires pandas") from error
-    return pandas
-

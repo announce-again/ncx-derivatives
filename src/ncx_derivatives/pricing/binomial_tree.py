@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from math import exp, sqrt
 from typing import Literal
 
-
 OptionType = Literal["call", "put"]
 EXERCISE_TOLERANCE = 1e-12
 
@@ -120,7 +119,9 @@ def _binomial_price(
 ) -> float | BinomialTreeResult:
     _validate_inputs(spot, strike, maturity, volatility, steps)
 
-    if maturity == 0.0 or volatility == 0.0:
+    dt = maturity / steps
+    up = exp(volatility * sqrt(dt))
+    if up == 1.0:
         return _zero_volatility_price(
             option_type,
             spot,
@@ -133,8 +134,6 @@ def _binomial_price(
             return_exercise_boundary,
         )
 
-    dt = maturity / steps
-    up = exp(volatility * sqrt(dt))
     down = 1.0 / up
     growth = exp((rate - dividend_yield) * dt)
     probability = (growth - down) / (up - down)
@@ -145,6 +144,7 @@ def _binomial_price(
         )
 
     discount = exp(-rate * dt)
+    down_probability = 1.0 - probability
 
     node_spot = spot * (down ** steps)
     spot_ratio = up / down
@@ -153,38 +153,48 @@ def _binomial_price(
         values.append(_payoff(option_type, node_spot, strike))
         node_spot *= spot_ratio
 
-    boundaries: list[float | None] = [None] * (steps + 1)
+    boundaries: list[float | None] | None = (
+        [None] * (steps + 1) if return_exercise_boundary else None
+    )
+    if not american:
+        for step in range(steps - 1, -1, -1):
+            for node in range(step + 1):
+                values[node] = discount * (
+                    probability * values[node + 1]
+                    + down_probability * values[node]
+                )
+        if boundaries is not None:
+            return BinomialTreeResult(values[0], tuple(boundaries))
+        return values[0]
 
     for step in range(steps - 1, -1, -1):
-        boundary_candidates: list[float] = []
         node_spot = spot * (down ** step)
 
         for node in range(step + 1):
             continuation_value = discount * (
                 probability * values[node + 1]
-                + (1.0 - probability) * values[node]
+                + down_probability * values[node]
             )
 
             exercise_value = _payoff(option_type, node_spot, strike)
 
-            if american and _should_exercise(
+            if _should_exercise(
                 exercise_value,
                 continuation_value,
             ):
                 values[node] = exercise_value
-                boundary_candidates.append(node_spot)
+                # Spots rise with the node index. Calls use the first
+                # exercising node and puts use the last.
+                if boundaries is not None and (
+                    option_type == "put" or boundaries[step] is None
+                ):
+                    boundaries[step] = node_spot
             else:
                 values[node] = continuation_value
 
             node_spot *= spot_ratio
 
-        if boundary_candidates:
-            if option_type == "call":
-                boundaries[step] = min(boundary_candidates)
-            else:
-                boundaries[step] = max(boundary_candidates)
-
-    if return_exercise_boundary:
+    if boundaries is not None:
         return BinomialTreeResult(values[0], tuple(boundaries))
     return values[0]
 

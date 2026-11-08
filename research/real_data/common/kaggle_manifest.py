@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping
 
 from .deterministic_io import file_sha256, write_json
 

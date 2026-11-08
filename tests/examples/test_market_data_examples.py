@@ -1,10 +1,9 @@
-from pathlib import Path
 import runpy
 import shutil
 import sys
+from pathlib import Path
 
 import pytest
-
 
 EXAMPLES = (
     "01_build_canonical_snapshot.py",

@@ -156,6 +156,11 @@ Invert Black–Scholes prices to recover implied volatility.
 - Upper-bound mapping to infinite volatility
 - Configurable convergence tolerance and iteration limits
 
+Both public solvers accept keyword-only `price_tolerance`, `volatility_tolerance`,
+`max_iterations`, and `max_volatility`. Non-finite inputs raise
+`ImpliedVolatilityInputError`. An unbracketed price or an exhausted iteration
+budget raises `ImpliedVolatilityConvergenceError`.
+
 ### Validation
 
 - Price-to-volatility round trips
@@ -1692,14 +1697,19 @@ runtime error if pandas is unavailable. DataFrame input normalises pandas-native
 missing values such as `pd.NA`, `NaT`, and `NaN` to `None` before entering the
 pure-Python records parser.
 
+Records and DataFrames include trade rows with `record_type="trade"` when a
+snapshot has trades. Existing quote rows are accepted without a type tag.
+Quote sizes, volume, open interest, and trade sizes retain their integer
+precision when missing values are present.
+
 The records representation is the stable intermediate format for dataset
 exports and future serialisation work. DataFrame conversion is a convenience
 wrapper around records conversion, not an internal storage model.
 
 `option_chain_from_records` rebuilds one non-empty snapshot at a time. Empty
-snapshot round-trip is intentionally deferred until serialisation introduces an
-explicit snapshot header or manifest. Snapshot-level metadata and underlying
-quote fields must be consistent across all rows.
+records cannot reconstruct a snapshot. A trade-only snapshot has trade rows and
+can be reconstructed. Snapshot-level metadata and underlying quote fields must
+be consistent across all rows.
 
 Enriched quote exports include the original canonical quote and contract
 columns plus derived research columns, so resulting research tables can still
@@ -1777,6 +1787,13 @@ deterministic identifiers.
   output files.
 - The logical content hash includes the full accepted/rejected quote
   partitions, not only their counts.
+- Canonical JSON includes trades and preserves the underlying quote and snapshot
+  metadata for snapshots without quotes. CSV files remain quote tables.
+- Dataset files are staged before publication. A rewrite withdraws the old
+  manifest, publishes the new manifest last, and restores the previous files
+  after a publication error. Readers holding an earlier manifest must coordinate
+  with writers during a rewrite. An interrupted process can leave a sibling
+  lock and recovery backup.
 - Configuration metadata requires non-empty string object keys; unsupported or
   ambiguous key types are rejected instead of silently converted.
 
@@ -1925,7 +1942,7 @@ not expose `UNSTABLE_IV` until a distinct stability definition exists.
 - Bid, midpoint, and ask IV results carry status, failure reason, Vega, and
   diagnostic flags
 - The solver and chain share one scale-aware absolute/relative price-bound
-  tolerance policy
+  tolerance policy and use BSM bounds for every exercise style
 - `IV = 0.0` maps to `Vega = 0.0` as an explicit boundary representation policy,
   not as a continuous-limit claim for every degenerate parameter combination
 - The public volatility-chain export uses `log_forward_moneyness =
@@ -2081,7 +2098,7 @@ violations.
 
 ### Status
 
-**Planned**
+**Complete**. See [calibration, diagnostics, and held-out comparison](parametric_volatility.md).
 
 ---
 
@@ -2105,7 +2122,7 @@ single-day option chain.
 
 ### Status
 
-**Planned**
+**Complete**. See the [SPY volatility dynamics study](../research/real_data/volatility_dynamics.md).
 
 ---
 
@@ -2502,13 +2519,9 @@ Potential work includes:
 
 # Near-Term Priorities
 
-The immediate development sequence is:
-
-1. Begin Stage 3.3 - Non-Parametric Volatility Surface
-2. Add per-expiry total-variance interpolation in log-forward-moneyness
-3. Add explicit maturity interpolation and extrapolation policies
-4. Add model-independent smile and surface arbitrage diagnostics
-5. Add SVI / SSVI calibration only after diagnostics are reusable
+Begin [Stage 4.1 — Instruments and Positions](#stage-41--instruments-and-positions).
+Position-level valuation and Greeks provide the basis for multi-leg strategy
+construction and scenario analysis.
 
 The project should not advance to complex volatility or market-making research until the foundational numerical methods are independently validated.
 

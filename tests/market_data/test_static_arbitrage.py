@@ -18,7 +18,6 @@ from ncx_derivatives.market_data import (
     diagnose_static_arbitrage,
 )
 
-
 UTC = timezone.utc
 VALUATION_TIMESTAMP = datetime(2026, 1, 1, 15, 0, tzinfo=UTC)
 VALUATION_DATE = date(2026, 1, 1)

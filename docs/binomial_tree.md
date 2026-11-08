@@ -61,3 +61,5 @@ terminal payoff.
 - Zero-volatility American options are still evaluated on the tree's discrete
   exercise dates. Increasing `steps` makes this discrete approximation closer
   to continuous exercise.
+- The tree also uses deterministic evolution when the up and down factors round
+  to the same floating-point value.

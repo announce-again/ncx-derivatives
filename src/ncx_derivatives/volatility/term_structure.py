@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
 from math import isfinite
-from typing import Any, Iterable
+from typing import Any
+
+from ncx_derivatives.utils._optional import require_pandas
 
 from .delta_metrics import ButterflyResult, RiskReversalResult, SmileDeltaMetrics
 from .smile_metrics import SmileMetricResult
@@ -214,7 +217,7 @@ def volatility_term_structures_to_records(
 def volatility_term_structures_to_dataframe(
     structures: Iterable[VolatilityTermStructure],
 ):
-    pandas = _import_pandas()
+    pandas = require_pandas()
     return pandas.DataFrame.from_records(
         volatility_term_structures_to_records(structures),
         columns=TERM_STRUCTURE_COLUMNS,
@@ -262,13 +265,3 @@ def _term_record(
 
 def _enum_value(value: Enum | None) -> str | None:
     return None if value is None else value.value
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError(
-            "pandas interoperability requires pandas to be installed",
-        ) from error
-    return pandas

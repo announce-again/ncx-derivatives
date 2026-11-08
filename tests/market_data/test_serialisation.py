@@ -1,6 +1,8 @@
-from datetime import date, datetime, timezone
 import csv
 import json
+from dataclasses import replace
+from datetime import date, datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +16,7 @@ from ncx_derivatives.market_data import (
     OptionChainSnapshot,
     OptionContract,
     OptionQuote,
+    OptionTrade,
     OptionType,
     RejectedQuote,
     RejectionReason,
@@ -30,7 +33,6 @@ from ncx_derivatives.market_data import (
     write_option_chain_csv,
 )
 from ncx_derivatives.market_data.derived import EnrichedOptionQuote
-
 
 UTC = timezone.utc
 AS_OF = datetime(2026, 7, 30, 14, 30, tzinfo=UTC)
@@ -121,6 +123,53 @@ def test_canonical_snapshot_to_json_is_serialisable() -> None:
     assert payload["as_of"] == "2026-07-30T14:30:00Z"
     assert len(payload["records"]) == 2
     assert "AAPL" in encoded
+
+
+def test_canonical_json_and_identity_preserve_trades_and_underlying_without_quotes(tmp_path):
+    snapshot = replace(_snapshot(), quotes=())
+    trade = OptionTrade(_contract(OptionType.CALL, 100.0), AS_OF, price=4.5, size=8)
+    with_trade = replace(snapshot, trades=(trade,))
+    first = write_market_data_dataset(tmp_path / "first", snapshot, source="fixture")
+    second = write_market_data_dataset(tmp_path / "second", with_trade, source="fixture")
+
+    payload = json.loads(second.path_map["canonical_json"].read_text(encoding="utf-8"))
+    assert payload["records"] == []
+    assert payload["trades"][0]["trade_price"] == 4.5
+    assert payload["underlying_quote"]["price"] == 101.0
+    assert payload["metadata"]["dataset"] == "snapshot"
+    assert first.manifest.dataset_id != second.manifest.dataset_id
+
+
+@pytest.mark.parametrize("fail_during_publication", [False, True])
+def test_failed_dataset_rewrite_keeps_original_files(tmp_path, monkeypatch, fail_during_publication):
+    root = tmp_path / "dataset"
+    snapshot = _snapshot()
+    original = write_market_data_dataset(root, snapshot, source="fixture")
+    before = {name: path.read_bytes() for name, path in original.paths}
+    (root / "notes.txt").write_text("keep", encoding="utf-8")
+    updated = replace(snapshot, quotes=(replace(snapshot.quotes[0], ask=9.0),))
+    kwargs = {}
+    if fail_during_publication:
+        replace_file = Path.replace
+
+        def fail_replacing_canonical_json(path, target):
+            if path.name == "canonical_option_chain.json" and "staged" in path.parts:
+                assert not (root / "manifest.json").exists()
+                assert original.path_map["canonical_csv"].read_bytes() != before["canonical_csv"]
+                raise OSError("publication failed")
+            return replace_file(path, target)
+
+        monkeypatch.setattr(Path, "replace", fail_replacing_canonical_json)
+        error, message = OSError, "publication failed"
+    else:
+        kwargs["cleaning_config"] = {"max_relative_spread": float("nan")}
+        error, message = ValueError, "configuration floats must be finite"
+
+    with pytest.raises(error, match=message):
+        write_market_data_dataset(root, updated, source="fixture", **kwargs)
+
+    assert {name: path.read_bytes() for name, path in original.paths} == before
+    assert (root / "notes.txt").read_text(encoding="utf-8") == "keep"
 
 
 def test_write_canonical_json_and_csv(tmp_path) -> None:

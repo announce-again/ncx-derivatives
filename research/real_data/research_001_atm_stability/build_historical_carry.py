@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 
 import duckdb
@@ -26,7 +25,6 @@ from .historical_carry import (
     rate_row_map,
     trailing_dividend_cash,
 )
-
 
 FRED_DOWNLOAD_URL = (
     "https://fred.stlouisfed.org/graph/fredgraph.csv?"

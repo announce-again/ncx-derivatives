@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from bisect import bisect_right
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
 from math import exp, isfinite
 from pathlib import Path
-from typing import Iterable, Mapping
 
 import pandas as pd
 
-from ncx_derivatives.market_data import CarryAssumptions, FlatDividendYieldCurve, FlatZeroRateCurve
-
+from ncx_derivatives.market_data import (
+    CarryAssumptions,
+    FlatDividendYieldCurve,
+    FlatZeroRateCurve,
+)
 
 TREASURY_MATURITIES = {
     "DGS1MO": 1.0 / 12.0,
@@ -203,7 +206,6 @@ def projected_dividend_schedule(
     maximum_horizon_days: int = 370,
 ) -> tuple[tuple[date, ...], tuple[float, ...]]:
     dates = pd.to_datetime(distributions["ex_date"]).dt.date
-    amounts = pd.to_numeric(distributions["cash_dividend"], errors="coerce")
     known = distributions.loc[dates <= quote_date]
     if known.empty:
         raise ValueError(f"no known SPY distribution on or before {quote_date}")

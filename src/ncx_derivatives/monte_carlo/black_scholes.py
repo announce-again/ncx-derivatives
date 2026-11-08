@@ -4,7 +4,6 @@ from random import Random
 from statistics import NormalDist
 from typing import Literal
 
-
 OptionType = Literal["call", "put"]
 
 
@@ -278,8 +277,8 @@ def _confidence_interval(
     standard_error: float,
     confidence_level: float,
 ) -> tuple[float, float]:
-    tail_probability = 0.5 + confidence_level / 2.0
-    z_score = NormalDist().inv_cdf(tail_probability)
+    tail_probability = (1.0 - confidence_level) / 2.0
+    z_score = -NormalDist().inv_cdf(tail_probability)
     width = z_score * standard_error
     return price - width, price + width
 
@@ -294,6 +293,14 @@ def _standard_error(values: tuple[float, ...]) -> float:
         (value - mean_value) ** 2 for value in values
     ) / (count - 1)
     return sqrt(variance / count)
+
+
+def _validate_sampling_error(
+    maturity: float, volatility: float, simulations: int, antithetic: bool
+) -> None:
+    independent_observations = (simulations + 1) // 2 if antithetic else simulations
+    if maturity > 0.0 and volatility > 0.0 and independent_observations < 2:
+        raise ValueError("at least two independent observations are required to estimate sampling error")
 
 
 def _estimator_observations(
@@ -370,6 +377,7 @@ def _monte_carlo_price(
 ) -> MonteCarloResult:
     _validate_market_inputs(spot, strike, maturity, volatility)
     _validate_simulation_inputs(simulations, confidence_level)
+    _validate_sampling_error(maturity, volatility, simulations, antithetic)
 
     terminal_prices = simulate_gbm_terminal_prices(
         spot,
@@ -499,7 +507,11 @@ def _monte_carlo_asian_price(
 ) -> MonteCarloResult:
     _validate_market_inputs(spot, strike, maturity, volatility)
     _validate_simulation_inputs(simulations, confidence_level)
+    _validate_sampling_error(maturity, volatility, simulations, antithetic)
     times = _monitoring_times(maturity, monitoring_dates)
+    if maturity == 0.0:
+        price = _payoff(option_type, spot, strike)
+        return MonteCarloResult(price, 0.0, (price, price), simulations)
 
     paths = simulate_gbm_paths(
         spot,

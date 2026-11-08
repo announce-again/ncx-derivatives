@@ -38,7 +38,9 @@ MonteCarloResult(
   cases, but no variance-reduction method should be assumed to improve every
   payoff under every parameter set.
 - When antithetic variates are enabled, standard errors are estimated from
-  pair-average observations rather than treating paired shocks as independent.
+  pair averages. An odd final path is a separate observation.
+- Stochastic pricing requires at least two independent observations to estimate
+  the standard error. A single path is sufficient at expiry or at zero volatility.
 - The current implementation uses only the Python standard library. A future
   NumPy backend can improve throughput without changing the public result
   object.

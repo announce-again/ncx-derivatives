@@ -7,11 +7,11 @@ from ncx_derivatives.market_data import OptionType
 from ncx_derivatives.volatility import (
     ImpliedVolatilityChain,
     SmileIvSource,
-    SmileMetricStatus,
     SmileSelectionConfig,
     analyze_volatility_smiles,
     build_volatility_smiles,
 )
+from research.real_data.common._optional import require_pandas
 
 
 def build_expiry_panel(
@@ -23,7 +23,7 @@ def build_expiry_panel(
 ):
     """Build one auditable expiry table from the public Stage 3.1/3.2 APIs."""
 
-    pandas = _import_pandas()
+    pandas = require_pandas()
     if not dataset_id:
         raise ValueError("dataset_id must not be empty")
     if minimum_smile_points < 2:
@@ -217,11 +217,3 @@ def _add_liquidity(row, points):
     row["total_volume"] = sum(item.quote.session_volume or 0 for item in enriched)
     row["total_open_interest"] = sum(item.quote.open_interest or 0 for item in enriched)
     row["median_vega"] = median(vegas) if vegas else None
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError("Research 001 requires pandas") from error
-    return pandas

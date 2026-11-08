@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from hashlib import sha256
 from math import gcd, log, sqrt
 from pathlib import Path
 
@@ -18,7 +17,7 @@ from ncx_derivatives.market_data import (
     year_fraction,
 )
 from ncx_derivatives.pricing import call_price, put_price
-
+from ncx_derivatives.utils._files import file_sha256
 
 SYNTHETIC_OPTION_QUOTE_COLUMNS = (
     "Underlying Symbol",
@@ -184,15 +183,14 @@ def write_synthetic_option_quote_csv(
             elif bad_stage == "iv":
                 iv_bad_rows += 1
 
-    payload = output_path.read_bytes()
     return SyntheticOptionDatasetSummary(
         path=output_path,
         row_count=config.row_count,
         ingestion_bad_row_count=ingestion_bad_rows,
         cleaning_bad_row_count=cleaning_bad_rows,
         iv_bad_row_count=iv_bad_rows,
-        byte_count=len(payload),
-        sha256=sha256(payload).hexdigest(),
+        byte_count=output_path.stat().st_size,
+        sha256=file_sha256(output_path),
     )
 
 

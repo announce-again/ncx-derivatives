@@ -1,11 +1,12 @@
 """Enrich canonical quotes with rates, forwards, and research fields."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _common import VALUATION_DATE, carry_assumptions, sample_snapshot  # noqa: E402
+
 from ncx_derivatives.market_data import enrich_option_chain_snapshot  # noqa: E402
 
 

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, time
 from pathlib import Path
-import re
-from typing import Iterable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
-from ncx_derivatives.market_data import CsvColumnMapping, CsvIngestionConfig, SourceMetadata
-
+from ncx_derivatives.market_data import (
+    CsvColumnMapping,
+    CsvIngestionConfig,
+    SourceMetadata,
+)
+from research.real_data.common._optional import require_pandas
 
 STANDARD_COLUMNS = (
     "underlying_symbol",
@@ -76,7 +80,7 @@ def standardize_optionsdx_wide(
     original frame is never mutated and source row numbers remain attached.
     """
 
-    pandas = _import_pandas()
+    pandas = require_pandas()
     if not underlying_symbol.strip():
         raise ValueError("underlying_symbol must not be empty")
     mapping = _resolve_schema(tuple(str(column) for column in frame.columns))
@@ -140,7 +144,7 @@ def read_optionsdx_files(
 ):
     """Read CSV/Parquet source files and return one deterministically sorted table."""
 
-    pandas = _import_pandas()
+    pandas = require_pandas()
     standardized = []
     for raw_path in sorted((Path(path) for path in paths), key=lambda item: item.as_posix()):
         suffix = raw_path.suffix.lower()
@@ -237,11 +241,3 @@ def _resolve_schema(columns: Sequence[str]) -> dict[str, str | None]:
 
 def _token(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.lower())
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError("Research 001 requires pandas") from error
-    return pandas

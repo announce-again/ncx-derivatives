@@ -33,7 +33,6 @@ from .plots import generate_core_figures
 from .report import write_limitations
 from .run_spy_pilot import _write_audit
 
-
 TARGET_TENORS = (21, 45, 90, 150)
 TENOR_TOLERANCES = (7, 10, 15, 25)
 

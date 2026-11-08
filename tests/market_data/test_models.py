@@ -15,7 +15,6 @@ from ncx_derivatives.market_data import (
     UnderlyingQuote,
 )
 
-
 UTC = timezone.utc
 
 

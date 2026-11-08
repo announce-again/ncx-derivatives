@@ -243,13 +243,11 @@ def _report(pilot: Path, pilot_alt: Path, long: Path, cross: Path, source: pd.Da
     cross_summary = pd.read_csv(cross / "stability_by_underlying.csv")
     classes = pd.read_csv(cross / "stability_etf_vs_stock.csv")
     quotes = pd.read_csv(pilot / "quote_uncertainty_results.csv")
-    carry = pd.read_csv(pilot / "carry_sensitivity_results.csv")
     regression = pd.read_csv(pilot / "regression_results.csv")
     next_spread = regression.loc[(regression["model"] == "quote_uncertainty_next_day_hac") & (regression["term"] == "atm_iv_spread")].iloc[0]
     year2020 = periods.loc[periods["market_period"].eq("2020")].set_index("target_tenor")
     etf21 = classes.loc[(classes["underlying_class"] == "ETF") & (classes["target_tenor"] == 21)].iloc[0]
     stock21 = classes.loc[(classes["underlying_class"] == "stock") & (classes["target_tenor"] == 21)].iloc[0]
-    best_source = source.set_index("target_tenor")
     lines = [
         "# Research 001 — How Stable Is At-the-Money Implied Volatility?",
         "",
@@ -262,7 +260,7 @@ def _report(pilot: Path, pilot_alt: Path, long: Path, cross: Path, source: pd.Da
         f"1. In the 2010–2023 SPY vendor replication, median daily |ΔATMIV| declines from {100*long_summary.loc[21,'median_absolute_atm_iv_change']:.3f} vol points at 21D to {100*long_summary.loc[150,'median_absolute_atm_iv_change']:.3f} at 150D.",
         f"2. In 2020, the corresponding medians are {100*year2020.loc[21,'median_absolute_atm_iv_change']:.3f} and {100*year2020.loc[150,'median_absolute_atm_iv_change']:.3f} vol points.",
         f"3. NCX bid/ask uncertainty explains only a minority of observed moves: depending on tenor, {100*quotes['fraction_move_within_average_iv_spread'].min():.1f}%–{100*quotes['fraction_move_within_average_iv_spread'].max():.1f}% fall inside the average two-day IV spread. The next-day spread coefficient is {next_spread['coefficient']:.3f} (p={next_spread['p_value']:.4g}).",
-        f"4. H1 is carry-sensitive. Zero-carry NCX ranks 150D most stable, while the flat 4% rate / 1.5% dividend-yield diagnostic ranks 45D most stable and 150D least stable.",
+        "4. H1 is carry-sensitive. Zero-carry NCX ranks 150D most stable, while the flat 4% rate / 1.5% dividend-yield diagnostic ranks 45D most stable and 150D least stable.",
         f"5. At 21D, ETFs have lower absolute instability ({100*etf21['median_absolute_atm_iv_change']:.3f} versus {100*stock21['median_absolute_atm_iv_change']:.3f} vol points), but higher relative instability ({100*etf21['median_relative_instability']:.2f}% versus {100*stock21['median_relative_instability']:.2f}%).",
         f"6. The two SPY Kaggle sources agree closely on levels in their overlap: correlations range from {source['atm_iv_level_correlation'].min():.3f} to {source['atm_iv_level_correlation'].max():.3f}; median absolute level differences range from {100*source['median_absolute_level_difference'].min():.3f} to {100*source['median_absolute_level_difference'].max():.3f} vol points.",
         "",

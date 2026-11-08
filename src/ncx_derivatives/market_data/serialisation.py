@@ -4,27 +4,29 @@ import csv
 import hashlib
 import json
 import shutil
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
 from enum import Enum
 from math import isfinite
 from pathlib import Path
-from typing import Any, Mapping
+from tempfile import TemporaryDirectory, mkdtemp
+from typing import Any
+
+from ncx_derivatives.utils._files import file_sha256
 
 from .cleaning import CleaningResult, EnrichedCleaningResult
 from .models import OptionChainSnapshot
 from .pandas_interop import (
     OPTION_CHAIN_COLUMNS,
-    STATIC_ARBITRAGE_COLUMNS,
-    VALIDATION_REPORT_COLUMNS,
+    _snapshot_quote_records,
+    _snapshot_trade_records,
     cleaning_result_to_records,
-    option_chain_to_records,
     static_arbitrage_report_to_records,
     validation_report_to_records,
 )
 from .static_arbitrage import StaticArbitrageReport
 from .validation import ValidationReport
-
 
 DATASET_SCHEMA_VERSION = "1.0"
 
@@ -152,12 +154,19 @@ class DatasetSnapshotWriteResult:
 def canonical_snapshot_to_json(snapshot: OptionChainSnapshot) -> dict[str, Any]:
     if not isinstance(snapshot, OptionChainSnapshot):
         raise ValueError("snapshot must be an OptionChainSnapshot")
-    return _canonical_json_value({
+    payload = {
         "schema_version": DATASET_SCHEMA_VERSION,
         "underlying_symbol": snapshot.underlying_symbol,
         "as_of": snapshot.as_of,
-        "records": option_chain_to_records(snapshot),
-    })
+        "records": _snapshot_quote_records(snapshot),
+    }
+    if snapshot.trades:
+        payload["trades"] = _snapshot_trade_records(snapshot)
+    if not snapshot.quotes and snapshot.underlying_quote is not None:
+        payload["underlying_quote"] = asdict(snapshot.underlying_quote)
+    if not snapshot.quotes and snapshot.metadata is not None:
+        payload["metadata"] = asdict(snapshot.metadata)
+    return _canonical_json_value(payload)
 
 
 def write_canonical_json(
@@ -173,7 +182,9 @@ def write_option_chain_csv(
 ) -> Path:
     if not isinstance(snapshot, OptionChainSnapshot):
         raise ValueError("snapshot must be an OptionChainSnapshot")
-    return _write_records_csv(path, option_chain_to_records(snapshot), OPTION_CHAIN_COLUMNS)
+    if not isinstance(snapshot, OptionChainSnapshot):
+        raise ValueError("snapshot must be an OptionChainSnapshot")
+    return _write_records_csv(path, _snapshot_quote_records(snapshot), OPTION_CHAIN_COLUMNS)
 
 
 def write_market_data_dataset(
@@ -217,135 +228,191 @@ def write_market_data_dataset(
         _validate_aware_datetime(valuation_timestamp, "valuation_timestamp")
 
     root_path = Path(root)
-    raw_dir = root_path / "raw"
-    processed_dir = root_path / "processed"
-    rejected_dir = root_path / "rejected"
-    diagnostics_dir = root_path / "diagnostics"
-    for directory in (raw_dir, processed_dir, rejected_dir, diagnostics_dir):
-        directory.mkdir(parents=True, exist_ok=True)
+    root_path.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=".ncx-dataset-", dir=root_path.parent) as work:
+        staging = Path(work) / "staged"
+        raw_dir = staging / "raw"
+        processed_dir = staging / "processed"
+        rejected_dir = staging / "rejected"
+        diagnostics_dir = staging / "diagnostics"
+        for directory in (raw_dir, processed_dir, rejected_dir, diagnostics_dir):
+            directory.mkdir(parents=True, exist_ok=True)
 
-    paths: dict[str, Path] = {}
+        paths: dict[str, Path] = {}
 
-    raw_hash_payload: Any
-    if raw_source_path is not None:
-        source_path = Path(raw_source_path)
-        if not source_path.is_file():
-            raise ValueError("raw_source_path must be an existing file")
-        raw_target = raw_dir / source_path.name
-        shutil.copyfile(source_path, raw_target)
-        paths["raw_source"] = raw_target
-        input_hash = _file_sha256(raw_target)
-        raw_hash_payload = {"raw_source_hash": input_hash}
-    else:
-        raw_hash_payload = canonical_snapshot_to_json(snapshot)
-        input_hash = _stable_hash(raw_hash_payload)
+        raw_hash_payload: Any
+        if raw_source_path is not None:
+            source_path = Path(raw_source_path)
+            if not source_path.is_file():
+                raise ValueError("raw_source_path must be an existing file")
+            raw_target = raw_dir / source_path.name
+            shutil.copyfile(source_path, raw_target)
+            paths["raw_source"] = raw_target
+            input_hash = file_sha256(raw_target)
+            raw_hash_payload = {"raw_source_hash": input_hash}
+        else:
+            raw_hash_payload = canonical_snapshot_to_json(snapshot)
+            input_hash = _stable_hash(raw_hash_payload)
 
-    accepted_quotes, rejected_quotes = _cleaning_quote_partition(snapshot, cleaning_result)
-    accepted_snapshot = _snapshot_with_quotes(snapshot, accepted_quotes)
-    rejected_snapshot = _snapshot_with_quotes(snapshot, rejected_quotes)
-    canonical_records = option_chain_to_records(snapshot)
-    accepted_records = option_chain_to_records(accepted_snapshot)
-    rejected_records = option_chain_to_records(rejected_snapshot)
+        accepted_quotes, rejected_quotes = _cleaning_quote_partition(snapshot, cleaning_result)
+        accepted_snapshot = _snapshot_with_quotes(snapshot, accepted_quotes)
+        rejected_snapshot = _snapshot_with_quotes(snapshot, rejected_quotes)
+        canonical_records = _snapshot_quote_records(snapshot)
+        accepted_records = _snapshot_quote_records(accepted_snapshot)
+        rejected_records = _snapshot_quote_records(rejected_snapshot)
 
-    canonical_csv = _write_records_csv(
-        processed_dir / "canonical_option_chain.csv",
-        canonical_records,
-        OPTION_CHAIN_COLUMNS,
-    )
-    canonical_json = write_canonical_json(
-        snapshot,
-        processed_dir / "canonical_option_chain.json",
-    )
-    accepted_csv = _write_records_csv(
-        processed_dir / "accepted_quotes.csv",
-        accepted_records,
-        OPTION_CHAIN_COLUMNS,
-    )
-    paths["canonical_csv"] = canonical_csv
-    paths["canonical_json"] = canonical_json
-    paths["accepted_csv"] = accepted_csv
+        canonical_csv = _write_records_csv(
+            processed_dir / "canonical_option_chain.csv",
+            canonical_records,
+            OPTION_CHAIN_COLUMNS,
+        )
+        canonical_json = write_canonical_json(
+            snapshot,
+            processed_dir / "canonical_option_chain.json",
+        )
+        accepted_csv = _write_records_csv(
+            processed_dir / "accepted_quotes.csv",
+            accepted_records,
+            OPTION_CHAIN_COLUMNS,
+        )
+        paths["canonical_csv"] = canonical_csv
+        paths["canonical_json"] = canonical_json
+        paths["accepted_csv"] = accepted_csv
 
-    validation_records = (
-        () if validation_report is None else validation_report_to_records(validation_report)
-    )
-    cleaning_records = (
-        () if cleaning_result is None else cleaning_result_to_records(cleaning_result)
-    )
-    arbitrage_records = (
-        ()
-        if static_arbitrage_report is None
-        else static_arbitrage_report_to_records(static_arbitrage_report)
-    )
+        validation_records = (
+            () if validation_report is None else validation_report_to_records(validation_report)
+        )
+        cleaning_records = (
+            () if cleaning_result is None else cleaning_result_to_records(cleaning_result)
+        )
+        arbitrage_records = (
+            ()
+            if static_arbitrage_report is None
+            else static_arbitrage_report_to_records(static_arbitrage_report)
+        )
 
-    rejected_csv = _write_records_csv(
-        rejected_dir / "rejected_quotes.csv",
-        rejected_records,
-        OPTION_CHAIN_COLUMNS,
-    )
-    validation_json = _write_json(
-        diagnostics_dir / "validation.json",
-        {"issues": validation_records},
-    )
-    cleaning_json = _write_json(
-        diagnostics_dir / "cleaning.json",
-        {"diagnostics": cleaning_records},
-    )
-    arbitrage_json = _write_json(
-        diagnostics_dir / "arbitrage.json",
-        {"diagnostics": arbitrage_records},
-    )
-    paths["rejected_quotes_csv"] = rejected_csv
-    paths["validation_json"] = validation_json
-    paths["cleaning_json"] = cleaning_json
-    paths["arbitrage_json"] = arbitrage_json
+        rejected_csv = _write_records_csv(
+            rejected_dir / "rejected_quotes.csv",
+            rejected_records,
+            OPTION_CHAIN_COLUMNS,
+        )
+        validation_json = _write_json(
+            diagnostics_dir / "validation.json",
+            {"issues": validation_records},
+        )
+        cleaning_json = _write_json(
+            diagnostics_dir / "cleaning.json",
+            {"diagnostics": cleaning_records},
+        )
+        arbitrage_json = _write_json(
+            diagnostics_dir / "arbitrage.json",
+            {"diagnostics": arbitrage_records},
+        )
+        paths["rejected_quotes_csv"] = rejected_csv
+        paths["validation_json"] = validation_json
+        paths["cleaning_json"] = cleaning_json
+        paths["arbitrage_json"] = arbitrage_json
 
-    output_payload = {
-        "canonical": canonical_snapshot_to_json(snapshot),
-        "accepted": accepted_records,
-        "rejected": rejected_records,
-        "validation": validation_records,
-        "cleaning": cleaning_records,
-        "arbitrage": arbitrage_records,
-        "raw": raw_hash_payload,
-    }
-    output_hash = _stable_hash(output_payload)
-    identity_payload = {
-        "schema_version": DATASET_SCHEMA_VERSION,
-        "source": source,
-        "as_of": snapshot.as_of,
-        "valuation_timestamp": valuation_timestamp,
-        "day_count": day_count,
-        "source_information": _mapping_to_pairs(source_information),
-        "normalisation_config": _mapping_to_pairs(normalisation_config),
-        "cleaning_config": _mapping_to_pairs(cleaning_config),
-        "rate_dividend_assumptions": _mapping_to_pairs(rate_dividend_assumptions),
-        "input_quote_count": len(snapshot.quotes),
-        "canonical_quote_count": len(snapshot.quotes),
-        "accepted_quote_count": len(accepted_quotes),
-        "rejected_quote_count": len(rejected_quotes),
-        "validation_issue_count": len(validation_records),
-        "cleaning_diagnostic_count": len(cleaning_records),
-        "arbitrage_diagnostic_count": len(arbitrage_records),
-        "input_hash": input_hash,
-        "output_hash": output_hash,
-    }
-    dataset_id = _stable_hash(identity_payload)
-    manifest_payload = {
-        **identity_payload,
-        "ingestion_timestamp": ingestion_timestamp,
-    }
-    manifest = DatasetManifest(
-        dataset_id=dataset_id,
-        **manifest_payload,
-    )
-    manifest_path = _write_json(root_path / "manifest.json", manifest.to_dict())
-    paths["manifest"] = manifest_path
+        output_payload = {
+            "canonical": canonical_snapshot_to_json(snapshot),
+            "accepted": accepted_records,
+            "rejected": rejected_records,
+            "validation": validation_records,
+            "cleaning": cleaning_records,
+            "arbitrage": arbitrage_records,
+            "raw": raw_hash_payload,
+        }
+        output_hash = _stable_hash(output_payload)
+        identity_payload = {
+            "schema_version": DATASET_SCHEMA_VERSION,
+            "source": source,
+            "as_of": snapshot.as_of,
+            "valuation_timestamp": valuation_timestamp,
+            "day_count": day_count,
+            "source_information": _mapping_to_pairs(source_information),
+            "normalisation_config": _mapping_to_pairs(normalisation_config),
+            "cleaning_config": _mapping_to_pairs(cleaning_config),
+            "rate_dividend_assumptions": _mapping_to_pairs(rate_dividend_assumptions),
+            "input_quote_count": len(snapshot.quotes),
+            "canonical_quote_count": len(snapshot.quotes),
+            "accepted_quote_count": len(accepted_quotes),
+            "rejected_quote_count": len(rejected_quotes),
+            "validation_issue_count": len(validation_records),
+            "cleaning_diagnostic_count": len(cleaning_records),
+            "arbitrage_diagnostic_count": len(arbitrage_records),
+            "input_hash": input_hash,
+            "output_hash": output_hash,
+        }
+        dataset_id = _stable_hash(identity_payload)
+        manifest_payload = {
+            **identity_payload,
+            "ingestion_timestamp": ingestion_timestamp,
+        }
+        manifest = DatasetManifest(
+            dataset_id=dataset_id,
+            **manifest_payload,
+        )
+        manifest_path = _write_json(staging / "manifest.json", manifest.to_dict())
+        paths["manifest"] = manifest_path
+        relative_paths = {key: path.relative_to(staging) for key, path in paths.items()}
+        _publish_dataset(staging, root_path, tuple(relative_paths.values()))
 
     return DatasetSnapshotWriteResult(
         root=root_path,
         manifest=manifest,
-        paths=tuple(sorted(paths.items())),
+        paths=tuple(sorted((key, root_path / path) for key, path in relative_paths.items())),
     )
+
+
+def _publish_dataset(staging: Path, root: Path, paths: tuple[Path, ...]) -> None:
+    lock = root.parent / f".{root.name}.ncx-dataset.lock"
+    handle = lock.open("x")
+    try:
+        if not root.exists():
+            staging.rename(root)
+            return
+        for directory in staging.iterdir():
+            if directory.is_dir():
+                (root / directory.name).mkdir(exist_ok=True)
+        _replace_dataset_files(staging, root, paths)
+    finally:
+        handle.close()
+        lock.unlink()
+
+
+def _replace_dataset_files(staging: Path, root: Path, paths: tuple[Path, ...]) -> None:
+    backup = Path(mkdtemp(prefix=".ncx-dataset-backup-", dir=root.parent))
+    manifest = Path("manifest.json")
+    replacements: list[tuple[Path, Path | None]] = []
+    published = False
+    try:
+        # Withdraw the old manifest before replacing any of its files.
+        for relative in (manifest, *(path for path in paths if path != manifest)):
+            target = root / relative
+            if target.is_dir():
+                raise IsADirectoryError(target)
+            previous = None
+            if target.exists() or target.is_symlink():
+                previous = backup / relative
+                previous.parent.mkdir(parents=True, exist_ok=True)
+                target.replace(previous)
+            replacements.append((target, previous))
+            if relative != manifest:
+                (staging / relative).replace(target)
+        (staging / manifest).replace(root / manifest)
+        published = True
+    except BaseException:
+        # Restore data first. A restoration error leaves the manifest withdrawn.
+        for target, previous in reversed(replacements):
+            if previous is None:
+                target.unlink(missing_ok=True)
+            else:
+                previous.replace(target)
+        raise
+    finally:
+        # If restoration itself fails, retain any remaining originals for recovery.
+        if published or not any(path.is_file() or path.is_symlink() for path in backup.rglob("*")):
+            shutil.rmtree(backup, ignore_errors=True)
 
 
 def _write_json(path: str | Path, payload: Any) -> Path:
@@ -382,14 +449,6 @@ def _csv_value(value: Any) -> Any:
     if isinstance(value, (tuple, list)):
         return _stable_json(value)
     return value
-
-
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _stable_hash(payload: Any) -> str:

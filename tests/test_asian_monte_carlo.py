@@ -11,6 +11,21 @@ from ncx_derivatives.monte_carlo import (
 from ncx_derivatives.pricing import call_price
 
 
+@pytest.mark.parametrize(
+    ("pricer", "spot"),
+    [(monte_carlo_asian_call_price, 105), (monte_carlo_asian_put_price, 95)],
+)
+def test_asian_price_at_expiry_is_deterministic(pricer, spot):
+    assert pricer(
+        spot, 100, 0, 0.05, 0.2, monitoring_dates=12, simulations=1, control_variate=True
+    ) == MonteCarloResult(5, 0, (5, 5), 1)
+
+
+def test_stochastic_asian_price_requires_two_independent_observations():
+    with pytest.raises(ValueError, match="independent observations"):
+        monte_carlo_asian_call_price(100, 100, 1, 0.05, 0.2, simulations=2, antithetic=True)
+
+
 def test_gbm_paths_are_reproducible_with_seed() -> None:
     first_run = simulate_gbm_paths(
         100.0,

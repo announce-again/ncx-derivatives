@@ -1,3 +1,5 @@
+import sys
+from dataclasses import replace
 from datetime import date, datetime, timezone
 
 import pytest
@@ -14,10 +16,11 @@ from ncx_derivatives.market_data import (  # noqa: E402
     OptionChainSnapshot,
     OptionContract,
     OptionQuote,
+    OptionTrade,
     OptionType,
     SourceMetadata,
-    StaticArbitrageConfig,
     StaticArbitrageCode,
+    StaticArbitrageConfig,
     UnderlyingQuote,
     clean_option_chain,
     cleaning_result_to_dataframe,
@@ -36,7 +39,6 @@ from ncx_derivatives.market_data import (  # noqa: E402
     validation_report_to_dataframe,
     validation_report_to_records,
 )
-
 
 UTC = timezone.utc
 AS_OF = datetime(2026, 7, 30, 14, 30, tzinfo=UTC)
@@ -108,6 +110,34 @@ def _enriched_quotes():
         ),
         valuation_date=date(2026, 7, 30),
     )
+
+
+@pytest.mark.parametrize("include_quotes", [True, False])
+def test_option_chain_round_trips_trades(include_quotes):
+    snapshot = _snapshot()
+    trade = OptionTrade(
+        snapshot.quotes[0].contract, AS_OF, price=4.5, size=2**53 + 1,
+        trade_venue="X", metadata=SourceMetadata(provider="fixture"),
+    )
+    underlying = replace(snapshot.underlying_quote, metadata=SourceMetadata(provider="underlying"))
+    snapshot = replace(
+        snapshot, quotes=snapshot.quotes if include_quotes else (),
+        trades=(trade,), underlying_quote=underlying,
+    )
+    assert option_chain_from_records(option_chain_to_records(snapshot)) == snapshot
+    assert option_chain_from_dataframe(option_chain_to_dataframe(snapshot)) == snapshot
+
+
+def test_dataframe_round_trips_large_integer_in_nullable_quote_column():
+    snapshot = _snapshot()
+    first, *other = snapshot.quotes
+    snapshot = replace(
+        snapshot,
+        quotes=(replace(first, session_volume=2**53 + 1),)
+        + tuple(replace(quote, session_volume=None) for quote in other),
+    )
+    assert len(snapshot.quotes) > 1
+    assert option_chain_from_dataframe(option_chain_to_dataframe(snapshot)) == snapshot
 
 
 def test_option_chain_records_round_trip_to_snapshot() -> None:
@@ -269,17 +299,14 @@ def test_pandas_interop_validates_inputs() -> None:
 
 
 def test_records_api_does_not_require_pandas_for_missing_detection(monkeypatch) -> None:
-    def fail_import():
-        raise RuntimeError("pandas unavailable")
-
-    import ncx_derivatives.market_data.pandas_interop as interop
-
-    monkeypatch.setattr(interop, "_import_pandas", fail_import)
+    monkeypatch.setitem(sys.modules, "pandas", None)
 
     records = option_chain_to_records(_snapshot())
     restored = option_chain_from_records(records)
 
     assert restored.quotes == _snapshot().quotes
+    with pytest.raises(RuntimeError, match="pandas interoperability"):
+        option_chain_to_dataframe(_snapshot())
 
 
 def test_option_chain_from_records_rejects_inconsistent_snapshot_metadata() -> None:

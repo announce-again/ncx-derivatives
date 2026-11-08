@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Callable
 
 from ncx_derivatives.market_data import CarryAssumptions, CleaningConfig
-from ncx_derivatives.volatility import ImpliedVolatilityChain, run_csv_volatility_pipeline
+from ncx_derivatives.volatility import (
+    ImpliedVolatilityChain,
+    run_csv_volatility_pipeline,
+)
+from research.real_data.common._optional import require_pandas
 from research.real_data.common.deterministic_io import write_csv
 from research.real_data.common.optionsdx_adapter import (
     STANDARD_COLUMNS,
@@ -31,7 +35,7 @@ def run_daily_ncx_pipeline(
 ) -> DailyBatchResult:
     """Run Stage 2/3.1 date by date so each maturity uses the right valuation date."""
 
-    pandas = _import_pandas()
+    pandas = require_pandas()
     data = standardized_options.copy()
     data["quote_date"] = pandas.to_datetime(data["quote_date"], errors="coerce")
     if data["quote_date"].isna().any():
@@ -96,11 +100,3 @@ def _count_record(stage, reason, valuation_date, raw_count, remaining_count):
         "raw_count": raw_count,
         "remaining_count": remaining_count,
     }
-
-
-def _import_pandas():
-    try:
-        import pandas
-    except ImportError as error:
-        raise RuntimeError("Research 001 requires pandas") from error
-    return pandas

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date
 import json
-from math import exp
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -38,7 +37,6 @@ from .pipeline import run_daily_ncx_pipeline
 from .plots import generate_core_figures
 from .regressions import run_quote_uncertainty_regression, run_spy_regression
 from .report import write_limitations, write_research_report
-
 
 TARGET_TENORS = (21, 45, 90, 150)
 TENOR_TOLERANCES = (7, 10, 15, 25)

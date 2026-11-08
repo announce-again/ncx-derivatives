@@ -1,7 +1,8 @@
 from datetime import date, datetime, timezone
-import pytest
 
+import pytest
 from _helpers import require_zoneinfo
+
 from ncx_derivatives.market_data import (
     ExerciseStyle,
     OptionType,
